@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: more-naive-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    path: infra/argocd/applications/prod
+    directory:
+      include: '*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: false
+      allowEmpty: false
