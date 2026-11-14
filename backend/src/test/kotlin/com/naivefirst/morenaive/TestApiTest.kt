@@ -13,6 +13,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.springframework.transaction.annotation.Transactional
 
 @SpringBootTest
@@ -138,5 +139,75 @@ class TestApiTest @Autowired constructor(
         val error = mapper.readTree(body)
         assertThat(error.size()).isEqualTo(1)
         assertThat(error["message"].asText()).isNotBlank()
+    }
+
+    @Test
+    @DisplayName("생성한 행의value만 수정하고 재조회하며 다른행은 보존한다")
+    fun `생성한 행의value만 수정하고 재조회하며 다른행은 보존한다`() {
+        // Given
+        val body = mvc.post("/api/tests") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"before"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
+        val id = mapper.readTree(body)["id"].asLong()
+        val other = records.saveAndFlush(TestRecord("untouched"))
+        // When
+        mvc.put("/api/tests/$id") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"after"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(id) }
+            jsonPath("$.value") { value("after") }
+        }
+        // Then
+        mvc.get("/api/tests/$id").andExpect { jsonPath("$.value") { value("after") } }
+        assertThat(records.findById(other.id!!).orElseThrow().value).isEqualTo("untouched")
+        assertThat(records.count()).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("없는 ID수정은404이며 새 행을 생성하지 않는다")
+    fun `없는 ID수정은404이며 새 행을 생성하지 않는다`() {
+        // Given
+        val before = records.count()
+        // When / Then
+        mvc.put("/api/tests/9223372036854775807") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"after"}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.message") { exists() }
+        }
+        assertThat(records.count()).isEqualTo(before)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["{}", "{\"value\":\"\"}", "{"])
+    @DisplayName("잘못된 수정입력은400이며 기존value가 남는다")
+    fun `잘못된 수정입력은400이며 기존value가 남는다`(input: String) {
+        // Given
+        val record = records.saveAndFlush(TestRecord("before"))
+        // When / Then
+        mvc.put("/api/tests/${record.id}") {
+            contentType = MediaType.APPLICATION_JSON
+            content = input
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.message") { exists() }
+        }
+        assertThat(records.findById(record.id!!).orElseThrow().value).isEqualTo("before")
+        assertThat(records.count()).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("잘못된 ID수정은400이며 행을 만들지 않는다")
+    fun `잘못된 ID수정은400이며 행을 만들지 않는다`() {
+        // Given / When / Then
+        mvc.put("/api/tests/0") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"after"}"""
+        }.andExpect { status { isBadRequest() } }
+        assertThat(records.count()).isZero()
     }
 }

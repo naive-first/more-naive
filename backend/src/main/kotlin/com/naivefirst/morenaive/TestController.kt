@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -25,6 +26,10 @@ class TestController(private val service: TestRecordService) {
 
     @GetMapping("/{id}")
     fun get(@PathVariable id: Long): TestResponse = response(service.get(requireId(id)))
+
+    @PutMapping("/{id}")
+    fun update(@PathVariable id: Long, @RequestBody request: TestWriteRequest): TestResponse =
+        response(service.update(requireId(id), request.requireValue()))
 
     private fun requireId(id: Long): Long {
         if (id <= 0) throw InvalidTestRequestException()
