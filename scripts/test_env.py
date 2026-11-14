@@ -228,6 +228,20 @@ class EnvironmentCommandTest(unittest.TestCase):
         self.assertEqual(result.returncode, 127)
         self.assertNotIn("private-argument", result.stderr + result.stdout)
 
+    def test_argocd_has_cluster_binding_and_no_database_or_state_secrets(self) -> None:
+        self.dotenv.write_text(
+            "PROD_KUBE_CONTEXT=fixture\nPROD_KUBE_SERVER=https://fixture:6443\n"
+            "PROD_NAMESPACE=more-naive-prod\nARGO_REPO_USERNAME=read-only\n"
+            "ARGO_REPO_TOKEN=repo-fixture\nPROD_DB_PASSWORD=database-fixture\n"
+            "RUSTFS_STATE_SECRET_KEY=state-fixture\n"
+        )
+        result = self.run_command("argocd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.child()["PROD_KUBE_SERVER"], "https://fixture:6443")
+        self.assertEqual(self.child()["ARGO_REPO_TOKEN"], "repo-fixture")
+        self.assertNotIn("PROD_DB_PASSWORD", self.child())
+        self.assertNotIn("RUSTFS_STATE_SECRET_KEY", self.child())
+
 
 if __name__ == "__main__":
     unittest.main()

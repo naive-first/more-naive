@@ -16,7 +16,8 @@ CONSUMERS: dict[str, tuple[str, ...]] = {
     "local-compose": tuple(f"LOCAL_DB_{key}" for key in DATABASE_KEYS)
     + ("LOCAL_DB_PORT",),
     "prod-config": tuple(f"PROD_DB_{key}" for key in DATABASE_KEYS)
-    + ("PROD_KUBE_CONTEXT", "PROD_NAMESPACE"),
+    + ("PROD_KUBE_CONTEXT", "PROD_KUBE_SERVER", "PROD_NAMESPACE"),
+    "argocd": ("PROD_KUBE_CONTEXT", "PROD_KUBE_SERVER", "PROD_NAMESPACE"),
     "rustfs-bootstrap": (
         "RUSTFS_ADMIN_ACCESS_KEY",
         "RUSTFS_ADMIN_SECRET_KEY",
@@ -51,6 +52,7 @@ CONSUMERS: dict[str, tuple[str, ...]] = {
     ),
 }
 OPTIONAL_KEYS: dict[str, tuple[str, ...]] = {
+    "argocd": ("ARGO_REPO_USERNAME", "ARGO_REPO_TOKEN"),
     "rustfs-bootstrap": ("RUSTFS_NAME",),
     "k3s": ("K3S_SERVER_URL", "K3S_TOKEN"),
     "tailscale-node": ("TAILSCALE_AUTH_KEY", "TAILSCALE_TAGS"),
@@ -122,7 +124,7 @@ def build_environment(consumer: str) -> dict[str, str]:
     process_keys = PROCESS_KEYS
     if consumer in ("local-app", "local-compose", "rustfs-bootstrap"):
         process_keys += DOCKER_KEYS
-    if consumer in ("prod-config", "k3s", "tailscale-proxy"):
+    if consumer in ("prod-config", "argocd", "k3s", "tailscale-proxy"):
         process_keys += ("KUBECONFIG",)
     environment = {key: os.environ[key] for key in process_keys if key in os.environ}
     renames = RENAMES.get(consumer, {})

@@ -30,7 +30,8 @@ python3 scripts/env.py <consumer> -- <command> [argument ...]
 | --- | --- |
 | `local-app` | `LOCAL_DB_URL/USERNAME/PASSWORD` → `DB_URL/USERNAME/PASSWORD` |
 | `local-compose` | `LOCAL_DB_DATABASE/USERNAME/PASSWORD/PORT` 그대로 |
-| `prod-config` | `PROD_DB_DATABASE/USERNAME/PASSWORD`, `PROD_KUBE_CONTEXT`, `PROD_NAMESPACE` 그대로 |
+| `prod-config` | `PROD_DB_DATABASE/USERNAME/PASSWORD`, `PROD_KUBE_CONTEXT`, `PROD_KUBE_SERVER`, `PROD_NAMESPACE` 그대로 |
+| `argocd` | `PROD_KUBE_CONTEXT/SERVER`, `PROD_NAMESPACE`; private repository의 `ARGO_REPO_USERNAME/TOKEN` 선택 |
 | `rustfs-bootstrap` | `RUSTFS_ADMIN_ACCESS_KEY/SECRET_KEY` → `TF_VAR_admin_access_key/admin_secret_key`; `RUSTFS_DATA_DIR/STATE_PATH/ENDPOINT` 그대로; `RUSTFS_NAME` 선택 |
 | `rustfs-state` | `RUSTFS_ENDPOINT/BUCKET/REGION/STATE_ACCESS_KEY/STATE_SECRET_KEY` 그대로 |
 | `rustfs-admin` | `RUSTFS_ENDPOINT/BUCKET/REGION/ADMIN_ACCESS_KEY/ADMIN_SECRET_KEY` 그대로 |
