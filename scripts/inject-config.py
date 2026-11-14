@@ -18,14 +18,14 @@ def kubectl(
     command = [
         "kubectl",
         "--context",
-        environment["PROD_KUBE_CONTEXT"],
+        environment["KUBE_CONTEXT"],
         "--namespace",
-        environment["PROD_NAMESPACE"],
+        environment["NAMESPACE"],
         "--request-timeout=30s",
         *arguments,
     ]
     process_environment = {
-        key: value for key, value in environment.items() if not key.startswith("PROD_")
+        key: value for key, value in environment.items() if not key.startswith("DB_") and key not in ("KUBE_CONTEXT", "KUBE_SERVER", "NAMESPACE")
     }
     result = subprocess.run(
         command,
@@ -43,9 +43,9 @@ def kubectl(
 
 
 def inject(environment: dict[str, str]) -> None:
-    namespace = environment["PROD_NAMESPACE"]
+    namespace = environment["NAMESPACE"]
     if not re.fullmatch(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?", namespace):
-        raise ValueError("PROD_NAMESPACE must be a Kubernetes namespace name")
+        raise ValueError("NAMESPACE must be a Kubernetes namespace name")
     config = json.loads(
         kubectl(environment, ["config", "view", "--minify", "-o", "json"])
     )
@@ -53,23 +53,23 @@ def inject(environment: dict[str, str]) -> None:
     if (
         len(clusters) != 1
         or clusters[0].get("cluster", {}).get("server")
-        != environment["PROD_KUBE_SERVER"]
+        != environment["KUBE_SERVER"]
     ):
-        raise ValueError("selected context server differs from PROD_KUBE_SERVER")
+        raise ValueError("selected context server differs from KUBE_SERVER")
     selected_namespace = json.loads(
         kubectl(environment, ["get", "namespace", namespace, "-o", "json"])
     )
     if selected_namespace.get("metadata", {}).get("name") != namespace:
         raise ValueError("namespace identity could not be verified")
     config_data = {
-        "DB_DATABASE": environment["PROD_DB_DATABASE"],
-        "DB_USERNAME": environment["PROD_DB_USERNAME"],
+        "DB_DATABASE": environment["DB_DATABASE"],
+        "DB_USERNAME": environment["DB_USERNAME"],
         "DB_URL": f"jdbc:postgresql://postgres.{namespace}.svc.cluster.local:5432/"
-        + quote(environment["PROD_DB_DATABASE"], safe=""),
+        + quote(environment["DB_DATABASE"], safe=""),
     }
     secret_data = {
         "DB_PASSWORD": base64.b64encode(
-            environment["PROD_DB_PASSWORD"].encode()
+            environment["DB_PASSWORD"].encode()
         ).decode()
     }
     objects = [
@@ -109,10 +109,10 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", required=True)
     args = parser.parse_args()
     try:
-        environment = build_environment("prod-config")
+        environment = build_environment("cluster-config", "prod")
         if (
-            args.context != environment["PROD_KUBE_CONTEXT"]
-            or args.namespace != environment["PROD_NAMESPACE"]
+            args.context != environment["KUBE_CONTEXT"]
+            or args.namespace != environment["NAMESPACE"]
         ):
             raise ValueError("explicit context/namespace differs from prod inputs")
         inject(environment)

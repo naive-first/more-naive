@@ -46,11 +46,11 @@ class InjectConfigTest(unittest.TestCase):
         kubectl.write_text(FAKE_KUBECTL)
         kubectl.chmod(0o755)
         (self.root / "server").write_text("https://fixture:6443")
-        self.dotenv = self.root / ".env"
+        self.dotenv = self.root / "env.prod"
         self.dotenv.write_text(
-            "PROD_KUBE_CONTEXT=fixture-prod\nPROD_KUBE_SERVER=https://fixture:6443\n"
-            "PROD_NAMESPACE=more-naive-prod\nPROD_DB_DATABASE=more_naive\n"
-            "PROD_DB_USERNAME=more_naive\nPROD_DB_PASSWORD=fixture-password-must-not-leak\n"
+            "KUBE_CONTEXT=fixture-prod\nKUBE_SERVER=https://fixture:6443\n"
+            "NAMESPACE=more-naive-prod\nDB_DATABASE=more_naive\n"
+            "DB_USERNAME=more_naive\nDB_PASSWORD=fixture-password-must-not-leak\n"
             "LOCAL_DB_PASSWORD=local-secret\nRUSTFS_ADMIN_SECRET_KEY=rustfs-secret\n"
         )
         self.environment = {
@@ -122,7 +122,7 @@ class InjectConfigTest(unittest.TestCase):
         child_environment = json.loads(
             (self.root / "child-environment.json").read_text()
         )
-        self.assertNotIn("PROD_DB_PASSWORD", child_environment)
+        self.assertNotIn("DB_PASSWORD", child_environment)
 
     def test_repeat_updates_same_resource_names(self) -> None:
         self.assertEqual(self.run_command().returncode, 0)
@@ -163,7 +163,7 @@ class InjectConfigTest(unittest.TestCase):
     def test_missing_password_stops_before_kubectl(self) -> None:
         self.dotenv.write_text(
             self.dotenv.read_text().replace(
-                "PROD_DB_PASSWORD=fixture-password-must-not-leak", "PROD_DB_PASSWORD="
+                "DB_PASSWORD=fixture-password-must-not-leak", "DB_PASSWORD="
             )
         )
         result = self.run_command()
