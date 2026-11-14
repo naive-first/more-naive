@@ -16,20 +16,21 @@ class EnvironmentCommandTest(unittest.TestCase):
         (self.root / "scripts").mkdir()
         source = Path(__file__).with_name("env.py")
         shutil.copyfile(source, self.root / "scripts" / "env.py")
-        self.dotenv = self.root / ".env"
+        self.dotenv = self.root / "env.dev"
         self.output = self.root / "child.json"
         self.dotenv.write_text(
-            "LOCAL_DB_URL=jdbc:postgresql://localhost:5432/local\n"
-            "LOCAL_DB_USERNAME=local_user\n"
-            "LOCAL_DB_PASSWORD=local_password\n",
+            "DB_URL=jdbc:postgresql://localhost:5432/local\n"
+            "DB_USERNAME=local_user\n"
+            "DB_PASSWORD=local_password\n",
             encoding="utf-8",
         )
 
     def run_command(
         self,
-        consumer: str = "local-app",
+        consumer: str = "app",
         extra: dict[str, str] | None = None,
         cwd: Path | None = None,
+        env_name: str = "dev",
     ) -> subprocess.CompletedProcess[str]:
         environment = {"PATH": os.environ["PATH"], "HOME": str(self.root)}
         environment.update(extra or {})
@@ -38,6 +39,8 @@ class EnvironmentCommandTest(unittest.TestCase):
             [
                 sys.executable,
                 str(self.root / "scripts" / "env.py"),
+                "--env",
+                env_name,
                 consumer,
                 "--",
                 sys.executable,
@@ -65,9 +68,7 @@ class EnvironmentCommandTest(unittest.TestCase):
 
     def test_other_consumer_and_inherited_secrets_are_not_forwarded(self) -> None:
         with self.dotenv.open("a") as dotenv:
-            dotenv.write(
-                "PROD_DB_PASSWORD=prod-secret\nRUSTFS_STATE_SECRET_KEY=state-secret\n"
-            )
+            dotenv.write("RUSTFS_STATE_SECRET_KEY=state-secret\n")
         result = self.run_command(
             extra={"GH_TOKEN": "github-secret", "PYTHONPATH": "injected"}
         )
@@ -76,33 +77,31 @@ class EnvironmentCommandTest(unittest.TestCase):
             {
                 "GH_TOKEN",
                 "PYTHONPATH",
-                "PROD_DB_PASSWORD",
                 "RUSTFS_STATE_SECRET_KEY",
-                "LOCAL_DB_PASSWORD",
             }.isdisjoint(self.child())
         )
         self.assertEqual(self.child()["DB_PASSWORD"], "local_password")
 
     def test_selected_process_value_overrides_file(self) -> None:
-        result = self.run_command(extra={"LOCAL_DB_USERNAME": "ci_user"})
+        result = self.run_command(extra={"DB_USERNAME": "ci_user"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.child()["DB_USERNAME"], "ci_user")
 
     def test_empty_override_fails_before_child_without_logging_values(self) -> None:
         result = self.run_command(
-            extra={"LOCAL_DB_PASSWORD": "", "GH_TOKEN": "private-marker"}
+            extra={"DB_PASSWORD": "", "GH_TOKEN": "private-marker"}
         )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("LOCAL_DB_PASSWORD", result.stderr)
+        self.assertIn("DB_PASSWORD", result.stderr)
         self.assertNotIn("private-marker", result.stderr + result.stdout)
         self.assertFalse(self.output.exists())
 
     def test_quotes_spaces_and_shell_syntax_are_literal(self) -> None:
         marker = self.root / "must-not-exist"
         self.dotenv.write_text(
-            "# comment\nLOCAL_DB_URL = 'jdbc:postgresql://localhost/local'\n"
-            'LOCAL_DB_USERNAME = "a user"\n'
-            f"LOCAL_DB_PASSWORD='$(touch {marker}) $HOME `id`'\n"
+            "# comment\nDB_URL = 'jdbc:postgresql://localhost/local'\n"
+            'DB_USERNAME = "a user"\n'
+            f"DB_PASSWORD='$(touch {marker}) $HOME `id`'\n"
         )
         result = self.run_command()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -120,52 +119,118 @@ class EnvironmentCommandTest(unittest.TestCase):
 
     def test_duplicate_key_fails(self) -> None:
         with self.dotenv.open("a") as dotenv:
-            dotenv.write("LOCAL_DB_PASSWORD=duplicate\n")
+            dotenv.write("DB_PASSWORD=duplicate\n")
         result = self.run_command()
         self.assertEqual(result.returncode, 2)
         self.assertFalse(self.output.exists())
 
     def test_unclosed_quote_fails(self) -> None:
-        self.dotenv.write_text("LOCAL_DB_PASSWORD='private-marker\n")
+        self.dotenv.write_text("DB_PASSWORD='private-marker\n")
         result = self.run_command()
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("private-marker", result.stderr)
 
-    def test_prod_does_not_fall_back_to_local_values(self) -> None:
-        result = self.run_command("prod-config")
+    def test_prod_does_not_fall_back_to_dev_file(self) -> None:
+        result = self.run_command("cluster-config", env_name="prod")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("PROD_DB_PASSWORD", result.stderr)
+        self.assertIn("DB_PASSWORD", result.stderr)
         self.assertFalse(self.output.exists())
 
-    def test_dev_selection_fails_before_child(self) -> None:
+    def test_environment_files_share_keys_and_select_different_values(self) -> None:
+        (self.root / "env.prod").write_text(
+            "DB_URL=jdbc:postgresql://fixture/prod\n"
+            "DB_USERNAME=prod_user\nDB_PASSWORD=prod_fixture\n"
+        )
+        self.assertEqual(self.run_command(env_name="prod").returncode, 0)
+        self.assertEqual(self.child()["DB_USERNAME"], "prod_user")
+        self.assertEqual(self.child()["DB_PASSWORD"], "prod_fixture")
+        prod_keys = set(self.child())
+        self.assertEqual(self.run_command().returncode, 0)
+        self.assertEqual(self.child()["DB_USERNAME"], "local_user")
+        self.assertEqual(set(self.child()), prod_keys)
+
+    def test_unselected_file_is_not_parsed(self) -> None:
+        (self.root / "env.prod").write_text("export PRIVATE=invalid\n")
+        self.assertEqual(self.run_command().returncode, 0)
+
+    def test_prod_does_not_fall_back_to_legacy_dotenv_or_prefixed_keys(self) -> None:
+        (self.root / ".env").write_text(self.dotenv.read_text())
+        result = self.run_command(
+            env_name="prod",
+            extra={
+                "PROD_DB_URL": "fixture",
+                "PROD_DB_USERNAME": "fixture",
+                "PROD_DB_PASSWORD": "private-marker",
+            },
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("private-marker", result.stderr + result.stdout)
+        self.assertFalse(self.output.exists())
+
+    def test_environment_selection_is_required(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(self.root / "scripts/env.py"),
+                "app",
+                "--",
+                sys.executable,
+                "-c",
+                "raise SystemExit(0)",
+            ],
+            env={"PATH": os.environ["PATH"]},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--env", result.stderr)
+
+    def test_unknown_environment_stops_before_child(self) -> None:
+        result = self.run_command(env_name="staging")
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_dev_infrastructure_stops_before_child(self) -> None:
+        self.dotenv.write_text(
+            "KUBE_CONTEXT=fixture\nKUBE_SERVER=https://fixture:6443\n"
+            "NAMESPACE=fixture\n"
+        )
+        result = self.run_command("argocd")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --env prod", result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_unknown_consumer_fails_before_child(self) -> None:
         result = self.run_command("dev")
         self.assertEqual(result.returncode, 2)
         self.assertFalse(self.output.exists())
 
-    def test_compose_keeps_local_key_names(self) -> None:
+    def test_compose_uses_same_database_key_names(self) -> None:
         self.dotenv.write_text(
-            "LOCAL_DB_DATABASE=local\nLOCAL_DB_USERNAME=user\nLOCAL_DB_PASSWORD=password\nLOCAL_DB_PORT=5432\n"
+            "DB_DATABASE=local\nDB_USERNAME=user\nDB_PASSWORD=password\nDB_PORT=5432\n"
         )
-        result = self.run_command("local-compose")
+        result = self.run_command("compose")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.child()["LOCAL_DB_DATABASE"], "local")
-        self.assertNotIn("DB_PASSWORD", self.child())
+        self.assertEqual(self.child()["DB_DATABASE"], "local")
+        self.assertEqual(self.child()["DB_PASSWORD"], "password")
 
     def test_bootstrap_and_state_credentials_stay_separate(self) -> None:
-        self.dotenv.write_text(
+        (self.root / "env.prod").write_text(
             "RUSTFS_ADMIN_ACCESS_KEY=admin-fixture\nRUSTFS_ADMIN_SECRET_KEY=admin-fixture-secret\n"
             "RUSTFS_DATA_DIR=/srv/rustfs\nRUSTFS_STATE_PATH=/srv/state/rustfs.tfstate\n"
             "RUSTFS_ENDPOINT=http://127.0.0.1:9000\nRUSTFS_BUCKET=state\nRUSTFS_REGION=us-east-1\n"
             "RUSTFS_STATE_ACCESS_KEY=state-fixture\nRUSTFS_STATE_SECRET_KEY=state-fixture-secret\n"
         )
         result = self.run_command(
-            "rustfs-bootstrap", extra={"AWS_SECRET_ACCESS_KEY": "cloud-fixture"}
+            "rustfs-bootstrap",
+            extra={"AWS_SECRET_ACCESS_KEY": "cloud-fixture"},
+            env_name="prod",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.child()["TF_VAR_admin_access_key"], "admin-fixture")
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", self.child())
         self.assertNotIn("RUSTFS_STATE_SECRET_KEY", self.child())
-        result = self.run_command("rustfs-state")
+        result = self.run_command("rustfs-state", env_name="prod")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.child()["RUSTFS_STATE_ACCESS_KEY"], "state-fixture")
         self.assertNotIn("TF_VAR_admin_secret_key", self.child())
@@ -175,9 +240,9 @@ class EnvironmentCommandTest(unittest.TestCase):
         self.dotenv.unlink()
         result = self.run_command(
             extra={
-                "LOCAL_DB_URL": "jdbc:postgresql://ci/local",
-                "LOCAL_DB_USERNAME": "ci",
-                "LOCAL_DB_PASSWORD": "ci-fixture",
+                "DB_URL": "jdbc:postgresql://ci/local",
+                "DB_USERNAME": "ci",
+                "DB_PASSWORD": "ci-fixture",
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -188,7 +253,9 @@ class EnvironmentCommandTest(unittest.TestCase):
             [
                 sys.executable,
                 str(self.root / "scripts/env.py"),
-                "local-app",
+                "--env",
+                "dev",
+                "app",
                 "--",
                 sys.executable,
                 "-c",
@@ -201,12 +268,12 @@ class EnvironmentCommandTest(unittest.TestCase):
         self.assertEqual(result.returncode, 7)
 
     def test_agent_without_join_token_stops_before_command(self) -> None:
-        self.dotenv.write_text(
-            "PROD_SSH_HOST=fixture\nPROD_SSH_USER=fixture\nPROD_SSH_KEY_FILE=/fixture/key\n"
-            "PROD_KUBE_CONTEXT=fixture\nPROD_NAMESPACE=more-naive-prod\n"
+        (self.root / "env.prod").write_text(
+            "SSH_HOST=fixture\nSSH_USER=fixture\nSSH_KEY_FILE=/fixture/key\n"
+            "KUBE_CONTEXT=fixture\nNAMESPACE=more-naive-prod\n"
             "K3S_NODE_NAME=fixture\nK3S_ROLE=agent\nK3S_SERVER_URL=https://fixture:6443\n"
         )
-        result = self.run_command("k3s")
+        result = self.run_command("k3s", env_name="prod")
         self.assertEqual(result.returncode, 2)
         self.assertIn("K3S_TOKEN", result.stderr)
         self.assertFalse(self.output.exists())
@@ -216,7 +283,9 @@ class EnvironmentCommandTest(unittest.TestCase):
             [
                 sys.executable,
                 str(self.root / "scripts/env.py"),
-                "local-app",
+                "--env",
+                "dev",
+                "app",
                 "--",
                 str(self.root / "missing-command"),
                 "private-argument",
@@ -229,17 +298,17 @@ class EnvironmentCommandTest(unittest.TestCase):
         self.assertNotIn("private-argument", result.stderr + result.stdout)
 
     def test_argocd_has_cluster_binding_and_no_database_or_state_secrets(self) -> None:
-        self.dotenv.write_text(
-            "PROD_KUBE_CONTEXT=fixture\nPROD_KUBE_SERVER=https://fixture:6443\n"
-            "PROD_NAMESPACE=more-naive-prod\nARGO_REPO_USERNAME=read-only\n"
-            "ARGO_REPO_TOKEN=repo-fixture\nPROD_DB_PASSWORD=database-fixture\n"
+        (self.root / "env.prod").write_text(
+            "KUBE_CONTEXT=fixture\nKUBE_SERVER=https://fixture:6443\n"
+            "NAMESPACE=more-naive-prod\nARGO_REPO_USERNAME=read-only\n"
+            "ARGO_REPO_TOKEN=repo-fixture\nDB_PASSWORD=database-fixture\n"
             "RUSTFS_STATE_SECRET_KEY=state-fixture\n"
         )
-        result = self.run_command("argocd")
+        result = self.run_command("argocd", env_name="prod")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.child()["PROD_KUBE_SERVER"], "https://fixture:6443")
+        self.assertEqual(self.child()["KUBE_SERVER"], "https://fixture:6443")
         self.assertEqual(self.child()["ARGO_REPO_TOKEN"], "repo-fixture")
-        self.assertNotIn("PROD_DB_PASSWORD", self.child())
+        self.assertNotIn("DB_PASSWORD", self.child())
         self.assertNotIn("RUSTFS_STATE_SECRET_KEY", self.child())
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""루트 dotenv에서 실행 목적에 필요한 입력만 전달한다."""
+"""선택한 루트 env.dev/env.prod에서 실행 목적에 필요한 입력만 전달한다."""
 
 import argparse
 import os
@@ -10,14 +10,13 @@ import sys
 
 
 DATABASE_KEYS = ("DATABASE", "USERNAME", "PASSWORD")
-SSH_KEYS = ("PROD_SSH_HOST", "PROD_SSH_USER", "PROD_SSH_KEY_FILE")
+SSH_KEYS = ("SSH_HOST", "SSH_USER", "SSH_KEY_FILE")
 CONSUMERS: dict[str, tuple[str, ...]] = {
-    "local-app": ("LOCAL_DB_URL", "LOCAL_DB_USERNAME", "LOCAL_DB_PASSWORD"),
-    "local-compose": tuple(f"LOCAL_DB_{key}" for key in DATABASE_KEYS)
-    + ("LOCAL_DB_PORT",),
-    "prod-config": tuple(f"PROD_DB_{key}" for key in DATABASE_KEYS)
-    + ("PROD_KUBE_CONTEXT", "PROD_KUBE_SERVER", "PROD_NAMESPACE"),
-    "argocd": ("PROD_KUBE_CONTEXT", "PROD_KUBE_SERVER", "PROD_NAMESPACE"),
+    "app": ("DB_URL", "DB_USERNAME", "DB_PASSWORD"),
+    "compose": tuple(f"DB_{key}" for key in DATABASE_KEYS) + ("DB_PORT",),
+    "cluster-config": tuple(f"DB_{key}" for key in DATABASE_KEYS)
+    + ("KUBE_CONTEXT", "KUBE_SERVER", "NAMESPACE"),
+    "argocd": ("KUBE_CONTEXT", "KUBE_SERVER", "NAMESPACE"),
     "rustfs-bootstrap": (
         "RUSTFS_ADMIN_ACCESS_KEY",
         "RUSTFS_ADMIN_SECRET_KEY",
@@ -39,8 +38,7 @@ CONSUMERS: dict[str, tuple[str, ...]] = {
         "RUSTFS_ADMIN_ACCESS_KEY",
         "RUSTFS_ADMIN_SECRET_KEY",
     ),
-    "k3s": SSH_KEYS
-    + ("PROD_KUBE_CONTEXT", "PROD_NAMESPACE", "K3S_NODE_NAME", "K3S_ROLE"),
+    "k3s": SSH_KEYS + ("KUBE_CONTEXT", "NAMESPACE", "K3S_NODE_NAME", "K3S_ROLE"),
     "tailscale-node": SSH_KEYS + ("TAILSCALE_NODE_NAME",),
     "tailscale-proxy": (
         "PROXY_SSH_HOST",
@@ -48,7 +46,7 @@ CONSUMERS: dict[str, tuple[str, ...]] = {
         "PROXY_SSH_KEY_FILE",
         "PROXY_HTTPS_HOSTNAME",
         "ISTIO_UPSTREAM_URL",
-        "PROD_KUBE_CONTEXT",
+        "KUBE_CONTEXT",
     ),
 }
 OPTIONAL_KEYS: dict[str, tuple[str, ...]] = {
@@ -58,9 +56,6 @@ OPTIONAL_KEYS: dict[str, tuple[str, ...]] = {
     "tailscale-node": ("TAILSCALE_AUTH_KEY", "TAILSCALE_TAGS"),
 }
 RENAMES = {
-    "local-app": {
-        f"LOCAL_DB_{key}": f"DB_{key}" for key in ("URL", "USERNAME", "PASSWORD")
-    },
     "rustfs-bootstrap": {
         "RUSTFS_ADMIN_ACCESS_KEY": "TF_VAR_admin_access_key",
         "RUSTFS_ADMIN_SECRET_KEY": "TF_VAR_admin_secret_key",
@@ -110,10 +105,16 @@ def read_dotenv(dotenv: Path) -> dict[str, str]:
     return values
 
 
-def build_environment(consumer: str) -> dict[str, str]:
+def build_environment(consumer: str, environment: str) -> dict[str, str]:
+    if environment not in ("dev", "prod"):
+        raise ValueError("environment must be dev or prod")
+    if consumer not in CONSUMERS:
+        raise ValueError("unknown consumer")
+    if environment == "dev" and consumer not in ("app", "compose"):
+        raise ValueError(f"{consumer} requires --env prod")
     required = CONSUMERS[consumer]
     selected = required + OPTIONAL_KEYS.get(consumer, ())
-    values = read_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    values = read_dotenv(Path(__file__).resolve().parent.parent / f"env.{environment}")
     inputs = {key: os.environ.get(key, values.get(key, "")) for key in selected}
     missing = [key for key in required if not inputs[key].strip()]
     if missing:
@@ -122,20 +123,23 @@ def build_environment(consumer: str) -> dict[str, str]:
         if not inputs["K3S_SERVER_URL"].strip() or not inputs["K3S_TOKEN"].strip():
             raise ValueError("agent requires K3S_SERVER_URL and K3S_TOKEN")
     process_keys = PROCESS_KEYS
-    if consumer in ("local-app", "local-compose", "rustfs-bootstrap"):
+    if consumer in ("app", "compose", "rustfs-bootstrap"):
         process_keys += DOCKER_KEYS
-    if consumer in ("prod-config", "argocd", "k3s", "tailscale-proxy"):
+    if consumer in ("cluster-config", "argocd", "k3s", "tailscale-proxy"):
         process_keys += ("KUBECONFIG",)
-    environment = {key: os.environ[key] for key in process_keys if key in os.environ}
+    child_environment = {
+        key: os.environ[key] for key in process_keys if key in os.environ
+    }
     renames = RENAMES.get(consumer, {})
-    environment.update(
+    child_environment.update(
         {renames.get(key, key): value for key, value in inputs.items() if value}
     )
-    return environment
+    return child_environment
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--env", choices=("dev", "prod"), required=True)
     parser.add_argument("consumer", choices=CONSUMERS)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -145,7 +149,7 @@ def main() -> int:
     if not command:
         parser.error("a command is required after --")
     try:
-        environment = build_environment(args.consumer)
+        environment = build_environment(args.consumer, args.env)
     except (OSError, UnicodeError, ValueError) as error:
         print(f"env: {error}", file=sys.stderr)
         return 2
