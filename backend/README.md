@@ -1,6 +1,29 @@
 # Backend
 
-JDK 21과 공식 Gradle Wrapper 8.14.3을 사용합니다. 현재 단계는 실행 도구만 준비하며 앱 소스·의존성·Dockerfile은 후속 #17에서 추가합니다. `test`와 `bootJar` 성공을 의미하지 않습니다.
+JDK 21·Gradle 8.14.3·Kotlin 2.2.21·Spring Boot 3.5.16으로 실행하는 최소 backend입니다. DB와 test CRUD는 후속 #29–#33에서 추가합니다. [Spring Boot 지원 도구](https://docs.spring.io/spring-boot/3.5/system-requirements.html)와 [Kotlin Gradle 호환 범위](https://kotlinlang.org/docs/gradle-configure-project.html)를 기준으로 고정했습니다.
+
+## 앱 실행과 이미지
+
+저장소 루트에서 검사·JAR 실행을 할 수 있습니다. 이 단계에는 필수 DB 입력이 없으며 prod 값을 local 값으로 대체하는 설정도 없습니다. 포트는 8080이며 종료 신호를 받으면 최대 20초 동안 진행 중인 요청을 마무리합니다.
+
+```sh
+backend/gradlew -p backend test bootJar
+java -jar backend/build/libs/app.jar
+curl --fail http://localhost:8080/actuator/health/liveness
+curl --fail http://localhost:8080/actuator/health/readiness
+```
+
+두 probe의 `status`는 정상 시 `UP`입니다. [Actuator probe](https://docs.spring.io/spring-boot/3.5/reference/actuator/endpoints.html#actuator.endpoints.kubernetes-probes)는 health만 노출하며 환경변수·내부 상세는 반환하지 않습니다. DB를 readiness에 연결하는 작업은 #29에서 진행합니다.
+
+```sh
+docker build -t more-naive-backend:local backend
+docker run --rm --name more-naive-backend-local -p 127.0.0.1:8080:8080 more-naive-backend:local
+docker stop --time 25 more-naive-backend-local
+```
+
+이미지는 고정 digest의 Temurin JRE 21 위에 같은 `app.jar`만 복사하고 UID/GID 10001로 실행합니다. build context allowlist는 JAR만 허용하므로 루트 `.env`·state·kubeconfig·소스가 이미지에 들어가지 않습니다. `Unable to access jarfile`이면 먼저 `bootJar`를 실행합니다. 포트 충돌이면 기존 서비스를 정지시키지 말고 호스트 포트를 바꿉니다. 컨테이너 재생성은 앱 프로세스만 교체합니다.
+
+DB 도입 후 local 실행은 #41의 `python3 scripts/env.py local-app -- backend/gradlew -p backend bootRun`을 사용합니다. Spring이 루트 `.env`를 자동으로 읽는다고 가정하지 않으며, CI는 선택한 테스트 값을 직접 주입합니다. dev 클러스터 배포는 만들지 않습니다.
 
 ## Wrapper 확인
 
