@@ -3,11 +3,11 @@ services:
   postgres:
     image: postgres:17.12-alpine
     environment:
-      POSTGRES_DB: ${LOCAL_DB_DATABASE:?LOCAL_DB_DATABASE required}
-      POSTGRES_USER: ${LOCAL_DB_USERNAME:?LOCAL_DB_USERNAME required}
-      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?LOCAL_DB_PASSWORD required}
+      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE required}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
     ports:
-      - "127.0.0.1:${LOCAL_DB_PORT:?LOCAL_DB_PORT required}:5432"
+      - "127.0.0.1:${DB_PORT:?DB_PORT required}:5432"
     volumes:
       - local-postgres:/var/lib/postgresql/data
     healthcheck:
