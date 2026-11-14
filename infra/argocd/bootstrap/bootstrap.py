@@ -32,8 +32,9 @@ def execute(args):
     if not args.apply:
         print("prod context/endpoint and chart rendering verified; no cluster writes")
         return
-    namespace = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "argocd"}}
-    run([*kubectl, "apply", "-f", "-"], input=json.dumps(namespace), stdout=subprocess.DEVNULL)
+    for name in ["argocd", "istio-system", "more-naive-prod"]:
+        namespace = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": name}}
+        run([*kubectl, "apply", "-f", "-"], input=json.dumps(namespace), stdout=subprocess.DEVNULL)
     token = os.environ.get("ARGO_REPO_TOKEN")
     if token:
         secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {
@@ -55,6 +56,26 @@ def execute(args):
     project = ROOT / "infra/argocd/bootstrap/prod/project.yaml"
     if project.exists():
         run([*kubectl, "apply", "-f", str(project)])
+    run([*kubectl, "apply", "-f", str(ROOT / "infra/argocd/projects/prod")])
+    stages = [
+        ("istio-base", "istio-system", "crd/gateways.networking.istio.io", "Established"),
+        ("istiod", "istio-system", "deployment/istiod", "Available"),
+        ("istio-gateway", "istio-system", "deployment/istio-ingressgateway", "Available"),
+        ("postgres", "more-naive-prod", "statefulset/postgres", None),
+        ("backend", "more-naive-prod", "deployment/backend", "Available"),
+    ]
+    for name, namespace, resource, condition in stages:
+        declaration = ROOT / f"infra/argocd/applications/prod/{name}.yaml"
+        if not declaration.exists():
+            continue
+        run([*kubectl, "apply", "-f", str(declaration)])
+        for field, value in [("sync.status", "Synced"), ("health.status", "Healthy")]:
+            run([*kubectl, "-n", "argocd", "wait", f"application/{name}",
+                 f"--for=jsonpath={{.status.{field}}}={value}", "--timeout=600s"])
+        if condition:
+            run([*kubectl, "-n", namespace, "wait", resource, f"--for=condition={condition}", "--timeout=300s"])
+        else:
+            run([*kubectl, "-n", namespace, "rollout", "status", resource, "--timeout=300s"])
     run([*kubectl, "apply", "-f", str(ROOT / "infra/argocd/bootstrap/prod/root.yaml")])
     run([*kubectl, "-n", "argocd", "wait", "application/more-naive-prod",
          "--for=jsonpath={.status.sync.status}=Synced", "--timeout=300s"])

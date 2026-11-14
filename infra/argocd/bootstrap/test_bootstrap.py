@@ -2,6 +2,7 @@ import argparse
 import importlib.util
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -33,6 +34,29 @@ class BootstrapGuardTest(unittest.TestCase):
             bootstrap.execute(self.args)
             self.assertEqual(run.call_count, 2)
             self.assertEqual(run.call_args.args[0][:2], ["helm", "template"])
+
+    def test_crd_failure_stops_control_plane_and_root_registration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            declarations = root / "infra/argocd/applications/prod"
+            declarations.mkdir(parents=True)
+            for name in ["istio-base", "istiod"]:
+                (declarations / f"{name}.yaml").write_text("test fixture")
+            calls = []
+
+            def command(args, **options):
+                calls.append(args)
+                if "--for=condition=Established" in args:
+                    raise subprocess.CalledProcessError(1, args)
+                return subprocess.CompletedProcess(args, 0, "https://prod:6443")
+
+            with patch.object(bootstrap, "ROOT", root), patch.object(bootstrap, "run", side_effect=command), \
+                 patch.dict(bootstrap.os.environ, {}, clear=True):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    bootstrap.execute(self.args)
+            applied = [args[-1] for args in calls if "apply" in args]
+            self.assertTrue(any(value.endswith("istio-base.yaml") for value in applied))
+            self.assertFalse(any(value.endswith("istiod.yaml") or value.endswith("root.yaml") for value in applied))
 
 
 if __name__ == "__main__":
