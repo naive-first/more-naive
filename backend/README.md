@@ -21,9 +21,9 @@ docker run --rm --name more-naive-backend-local -p 127.0.0.1:8080:8080 more-naiv
 docker stop --time 25 more-naive-backend-local
 ```
 
-이미지는 고정 digest의 Temurin JRE 21 위에 같은 `app.jar`만 복사하고 UID/GID 10001로 실행합니다. build context allowlist는 JAR만 허용하므로 루트 `.env`·state·kubeconfig·소스가 이미지에 들어가지 않습니다. `Unable to access jarfile`이면 먼저 `bootJar`를 실행합니다. 포트 충돌이면 기존 서비스를 정지시키지 말고 호스트 포트를 바꿉니다. 컨테이너 재생성은 앱 프로세스만 교체합니다.
+이미지는 고정 digest의 Temurin JRE 21 위에 같은 `app.jar`만 복사하고 UID/GID 10001로 실행합니다. build context allowlist는 JAR만 허용하므로 루트 `env.dev`·`env.prod`·state·kubeconfig·소스가 이미지에 들어가지 않습니다. `Unable to access jarfile`이면 먼저 `bootJar`를 실행합니다. 포트 충돌이면 기존 서비스를 정지시키지 말고 호스트 포트를 바꿉니다. 컨테이너 재생성은 앱 프로세스만 교체합니다.
 
-DB 도입 후 local 실행은 #41의 `python3 scripts/env.py local-app -- backend/gradlew -p backend bootRun`을 사용합니다. Spring이 루트 `.env`를 자동으로 읽는다고 가정하지 않으며, CI는 선택한 테스트 값을 직접 주입합니다. dev 클러스터 배포는 만들지 않습니다.
+DB 도입 후 local 실행은 #41의 `python3 scripts/env.py --env dev app -- backend/gradlew -p backend bootRun`을 사용합니다. Spring이 루트 `env.dev`를 자동으로 읽는다고 가정하지 않으며, CI는 선택한 테스트 값을 직접 주입합니다. dev 클러스터 배포는 만들지 않습니다.
 
 ## Wrapper 확인
 
