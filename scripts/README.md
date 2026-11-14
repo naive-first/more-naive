@@ -39,6 +39,7 @@ python3 scripts/env.py --env <dev|prod> <consumer> -- <command> [argument ...]
 | `app` | `DB_URL/USERNAME/PASSWORD` 그대로 | dev, prod |
 | `compose` | `DB_DATABASE/USERNAME/PASSWORD/PORT` 그대로 | dev, prod |
 | `cluster-config` | `DB_DATABASE/USERNAME/PASSWORD`, `KUBE_CONTEXT`, `KUBE_SERVER`, `NAMESPACE` 그대로 | prod |
+| `argocd-terraform` | `argocd` 입력과 RustFS state 인증; native prod argocd unit | prod |
 | `argocd` | `KUBE_CONTEXT/SERVER`, `NAMESPACE`; private repository의 `ARGO_REPO_USERNAME/TOKEN` 선택 | prod |
 | `rustfs-bootstrap` | `RUSTFS_ADMIN_ACCESS_KEY/SECRET_KEY` → `TF_VAR_admin_access_key/admin_secret_key`; `RUSTFS_DATA_DIR/STATE_PATH/ENDPOINT` 그대로; `RUSTFS_NAME` 선택 | prod |
 | `rustfs-state` | `RUSTFS_ENDPOINT/BUCKET/REGION/STATE_ACCESS_KEY/STATE_SECRET_KEY` 그대로 | prod |

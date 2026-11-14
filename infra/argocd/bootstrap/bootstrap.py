@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""고정 Helm values로 Argo CD를 설치하고 prod root만 등록한다."""
+"""Helm provider 설치 후 prod root 등록과 Ready 검증을 수행한다."""
 
 import argparse
 import base64
@@ -15,7 +15,9 @@ CHART_VERSION = "10.18.0"
 
 
 def run(command, **options):
-    return subprocess.run(command, check=True, text=True, **options)
+    environment = {key: value for key, value in os.environ.items()
+                   if key != "ARGO_REPO_TOKEN" and key not in ("RUSTFS_STATE_ACCESS_KEY", "RUSTFS_STATE_SECRET_KEY", "RUSTFS_ADMIN_ACCESS_KEY", "RUSTFS_ADMIN_SECRET_KEY")}
+    return subprocess.run(command, check=True, text=True, env=environment, **options)
 
 
 def execute(args):
@@ -32,8 +34,6 @@ def execute(args):
     if not args.apply:
         print("prod context/endpoint and chart rendering verified; no cluster writes")
         return
-    namespace = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "argocd"}}
-    run([*kubectl, "apply", "-f", "-"], input=json.dumps(namespace), stdout=subprocess.DEVNULL)
     token = os.environ.get("ARGO_REPO_TOKEN")
     if token:
         secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {
@@ -43,13 +43,11 @@ def execute(args):
                 "type": "git", "url": "https://github.com/naive-first/more-naive.git",
                 "username": os.environ.get("ARGO_REPO_USERNAME", "x-access-token"), "password": token}.items()}}
         # Secret의 렌더링/오류 본문은 로그에 출력하지 않는다.
-        result = subprocess.run([*kubectl, "apply", "--server-side", "--field-manager=more-naive-bootstrap", "-f", "-"],
-                                input=json.dumps(secret), text=True, capture_output=True)
-        if result.returncode:
-            raise ValueError("repository credential injection failed (details suppressed)")
-    run(["helm", "upgrade", "--install", "argocd", CHART, "--version", CHART_VERSION,
-         "--namespace", "argocd", "--kube-context", args.context, "--values", str(values),
-         "--wait", "--timeout", "10m"])
+        try:
+            run([*kubectl, "apply", "--server-side", "--field-manager=more-naive-bootstrap", "-f", "-"],
+                input=json.dumps(secret), capture_output=True)
+        except subprocess.CalledProcessError:
+            raise ValueError("repository credential injection failed (details suppressed)") from None
     for resource in ["deployment/argocd-server", "deployment/argocd-repo-server", "statefulset/argocd-application-controller"]:
         run([*kubectl, "-n", "argocd", "rollout", "status", resource, "--timeout=300s"])
     project = ROOT / "infra/argocd/bootstrap/prod/project.yaml"

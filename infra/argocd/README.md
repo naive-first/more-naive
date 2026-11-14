@@ -1,18 +1,21 @@
 # prod Argo CD
 
-고정 chart `10.18.0`/Argo CD `v3.6.1`과 `infra/environments/prod/argocd.yaml`은 bootstrap이 소유합니다. Argo CD 자체를 관리하는 별도 Application은 만들지 않습니다. root는 prod child `*.yaml`만 자동 추적하고 자동 prune은 비활성화합니다. 이 PR의 초기 root는 빈 child 경로이며 프로젝트 권한은 #12에서 제한합니다.
+Terraform Helm provider 3.3.0이 고정 chart `10.18.0`/Argo CD `v3.6.1`과 `infra/environments/prod/argocd.yaml`을 bootstrap 소유로 관리합니다. Argo CD 자체를 관리하는 Application은 만들지 않습니다. workload는 GitOps가 소유하며 root는 prod child `*.yaml`만 추적하고 자동 prune은 비활성화합니다.
+
+운영자가 k3s Ready, 실제 kubeconfig/context/API server, RustFS 버킷과 별도 state 인증을 준비한 뒤 `env.prod`의 공통 키로 실행합니다. Helm provider는 KUBECONFIG를 자동으로 읽지 않으므로 명시한 파일 목록을 전달합니다. 미설정 시 kubectl과 같은 `~/.kube/config`를 명시합니다. Terraform CLI 1.17.2, Terragrunt 1.2.2, kubectl, Helm 4.3.2가 필요합니다.
 
 ```bash
-python3 scripts/env.py argocd -- python3 infra/argocd/bootstrap/bootstrap.py \
-  --environment prod --context '<prod-context>' --expected-server 'https://<실제 API 주소>:6443'
+python3 scripts/env.py --env prod argocd-terraform -- terragrunt --working-dir infra/terragrunt/live/prod/argocd run -- init -input=false
+python3 scripts/env.py --env prod argocd-terraform -- terragrunt --working-dir infra/terragrunt/live/prod/argocd run -- plan -input=false -out=/absolute/private/argocd.tfplan
+python3 scripts/env.py --env prod argocd-terraform -- terragrunt --working-dir infra/terragrunt/live/prod/argocd run -- apply -input=false /absolute/private/argocd.tfplan
 ```
 
-루트 `.env` 도구 #41과 k3s Ready가 선행 조건입니다. Python3·kubectl·Helm4.3.2, 지정 context의 namespace/CRD/RBAC 설치 권한이 필요합니다. 기본 실행은 context API 주소 일치와 chart 렌더링만 검사합니다. 연결 정보를 확인한 뒤 `--apply`를 추가하면 namespace·필요한 저장소 인증→Helm 설치/갱신→Ready→root 등록·Synced 대기 순서로 진행합니다. UI에서 복사해 등록하지 않습니다.
+각 실행은 context/API 주소 일치와 chart 렌더링을 먼저 확인합니다. state key는 `more-naive/prod/argocd/terraform.tfstate`입니다. Helm provider가 namespace·CRD·release를 설치하고 wait를 완료한 뒤 `terraform_data`의 local-exec가 기존 등록 스크립트로 Ready→project/root 등록·Synced를 확인합니다. 매 apply는 등록 실행 기록을 교체해 state 밖의 repository 인증도 갱신합니다. Python이 Terraform이나 Helm upgrade를 대신 실행하지 않습니다.
 
-공개 저장소는 인증 없이 사용합니다. private인 경우 필요한 read-only `ARGO_REPO_TOKEN`과 선택적 `ARGO_REPO_USERNAME`만 외부로 전달합니다. 코드가 repository Secret을 stdin으로 주입하며 values/Git/로그에 자격 증명을 남기지 않습니다. 전체 `.env`를 올리지 않습니다. admin 초기 비밀번호도 이 도구가 출력하지 않습니다.
+기존 Helm release가 Terraform state에 없으면 provider의 새 release 생성이 실패합니다(`replace=false`). 운영자가 context·release·state lineage를 확인한 뒤 필요할 때만 별도 import를 검토합니다. 자동 takeover·state migration·release 교체는 하지 않습니다.
 
-server Service는 ClusterIP이며 ingress/공인 포트를 생성하지 않습니다. 필요할 때 허용된 운영자가 별도 인증 절차로 접근합니다. default RBAC 정책은 권한을 부여하지 않고 exec·미사용 Dex/알림/ApplicationSet은 비활성화합니다.
+공개 저장소는 인증 없이 사용합니다. private 저장소의 read-only `ARGO_REPO_TOKEN`은 `ARGO_REPO_USERNAME`과 함께 기존 repository Secret stdin 주입 경로로만 사용합니다. values·plan·state·argv·로그에는 넣지 않고 kubectl/Helm 자식 환경에서도 제거합니다. `env.prod` 전체나 admin 초기 비밀번호는 출력하지 않습니다.
 
-반복 배포는 설정 PR을 main에 merge하면 root/child의 자동 sync가 담당합니다. bootstrap 재실행은 같은 values로 Helm을 갱신하고 선언을 apply합니다. 실패하면 context/API 주소→노드 Ready→Helm 리소스→repo-server의 저장소 읽기와 Application 상태를 확인합니다. `kubectl get secret -o yaml`과 전체 kubeconfig 출력은 사용하지 않습니다.
+server Service는 ClusterIP이며 ingress/공인 포트를 생성하지 않습니다. default RBAC는 권한을 부여하지 않고 exec·Dex·알림·ApplicationSet은 비활성화합니다. 반복 workload 배포는 main의 root/child 자동 sync가 담당합니다. 실패하면 context/API→노드 Ready→Helm release→repo-server 읽기→Application 상태를 확인합니다. Secret/kubeconfig 전체 출력은 공유하지 않습니다.
 
-설치 제거는 Argo CD 제어를 중단하며 자동 prune 비활성화가 모든 수동 삭제를 막는 것은 아닙니다. 삭제 전에 Application·PVC 영향을 검토합니다. 실제 prod 설치·repo 읽기·자동 sync는 SSH/kubeconfig 미준비로 아직 확인하지 못했습니다. 로컬 chart 렌더링 검증과 구분합니다. [선언형 구성](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/)과 [자동 sync 정책](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)을 따릅니다.
+실제 prod 설치·repo 읽기·자동 sync는 이 로컬 검증에서 수행하지 않습니다. 삭제는 제어 중단과 Application/PVC 영향을 먼저 검토하며 자동 uninstall·PVC 삭제·백업/복원은 범위 밖입니다. [선언형 구성](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/)과 [자동 sync 정책](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)을 따릅니다.
