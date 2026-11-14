@@ -38,6 +38,9 @@ def register(args):
             raise ValueError("reviewed network/SSH policy and external join key required before installation")
         if Path("/var/lib/tailscale/tailscaled.state").exists() or Path("/etc/systemd/system/tailscaled.service").exists():
             raise ValueError("existing daemon state/service requires operator review")
+        unit = Path("/etc/systemd/system/more-naive-tailscaled.service")
+        if unit.exists():
+            raise ValueError("existing managed service requires review")
         archive = urllib.request.urlopen(f"https://pkgs.tailscale.com/stable/tailscale_{VERSION}_amd64.tgz", timeout=60).read()
         if hashlib.sha256(archive).hexdigest() != CHECKSUM:
             raise ValueError("official static archive checksum mismatch")
@@ -47,9 +50,6 @@ def register(args):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(source.extractfile(f"tailscale_{VERSION}_amd64/{name}").read())
                 target.chmod(0o755)
-        unit = Path("/etc/systemd/system/more-naive-tailscaled.service")
-        if unit.exists():
-            raise ValueError("existing managed service requires review")
         unit.write_text("[Unit]\nDescription=More Naive Tailscale\nAfter=network-online.target\nWants=network-online.target\n[Service]\nExecStart=/usr/local/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock\nRuntimeDirectory=tailscale\nStateDirectory=tailscale\nRestart=on-failure\n[Install]\nWantedBy=multi-user.target\n")
         subprocess.run(["systemctl", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "enable", "--now", "more-naive-tailscaled.service"], check=True)

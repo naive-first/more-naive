@@ -1,7 +1,10 @@
 import json
+import hashlib
+import io
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import tarfile
 from unittest.mock import patch
 
 from register import register
@@ -77,6 +80,33 @@ class RegistrationGuards(unittest.TestCase):
             register(self.args(apply=True, policy_reviewed=True))
         self.assertEqual(len(observed), 1)
         self.assertFalse(observed[0].exists())
+
+    def test_existing_managed_service_prevents_download_and_binary_writes(self):
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+            for name in ("tailscale", "tailscaled"):
+                info = tarfile.TarInfo(f"tailscale_1.104.7_amd64/{name}")
+                info.size = 7
+                tar.addfile(info, io.BytesIO(b"fixture"))
+        payload = archive.getvalue()
+        with patch("register.socket.gethostname", return_value="prod-node"), \
+             patch("register.pwd.getpwnam"), patch("register.shutil.which", return_value=None), \
+             patch("register.os.geteuid", return_value=0), \
+             patch("register.platform.system", return_value="Linux"), \
+             patch("register.platform.machine", return_value="x86_64"), \
+             patch.dict("register.os.environ", {"TAILSCALE_AUTH_KEY": "fixture"}, clear=True), \
+             patch("register.Path.exists", autospec=True, side_effect=lambda path: str(path) == "/etc/systemd/system/more-naive-tailscaled.service"), \
+             patch("register.CHECKSUM", hashlib.sha256(payload).hexdigest()), \
+             patch("register.urllib.request.urlopen") as download, \
+             patch("register.Path.mkdir") as mkdir, patch("register.Path.write_bytes") as write, \
+             patch("register.Path.chmod"), patch("register.subprocess.run") as command:
+            download.return_value.read.return_value = payload
+            with self.assertRaisesRegex(ValueError, "existing managed service"):
+                register(self.args(apply=True, policy_reviewed=True))
+            download.assert_not_called()
+            mkdir.assert_not_called()
+            write.assert_not_called()
+            command.assert_not_called()
 
 
 if __name__ == "__main__":
