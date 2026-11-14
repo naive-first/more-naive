@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from botocore.exceptions import ClientError
 
-from verify_bootstrap import EXECUTABLE, IMAGE, command, wait_health
+from verify_bootstrap import LOADER, IMAGE, command, wait_health
 from verify_state import ROOT, main
 
 
@@ -33,7 +33,7 @@ def check_lock(unit, second, env, name, client, state):
     for directory in [unit, second]:
         with (directory / "main.tf").open("a") as output:
             output.write(extra)
-    args = [str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "state", "--unit", "verify", "apply", "-input=false", "-auto-approve"]
+    args = [sys.executable, str(LOADER), "--env", "prod", "rustfs-state", "--", "terragrunt", "run", "--", "apply", "-input=false", "-auto-approve"]
     first = subprocess.Popen(args, env=env, cwd=unit, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         for _ in range(100):
