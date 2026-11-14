@@ -1,0 +1,16 @@
+replicaCount: 1
+image:
+  repository: ghcr.io/naive-first/more-naive-backend
+  digest: ''
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: '1'
+    memory: 768Mi
+routing:
+  enabled: false
+  host: ''
+  createGateway: false
+  gateway: istio-system/more-naive-gateway

@@ -26,3 +26,13 @@ bootstrap은 `more-naive-prod` namespace만 `istio-injection=enabled`로 표시�
 Host가 미확정이므로 `istio-route.yaml.example` values와 `ingress-route.yaml.example` Application은 비활성 상태입니다. `infra/charts/istio-route`는 Host 누락·일반 공인 hostname을 거부합니다. #38에서 TLS/실제 hostname을 확인한 뒤 입력을 채우고 두 `.example`을 실제 `.yaml`로 만드는 설정 PR을 준비해야 합니다. 임의의 host나 넓은 wildcard로 대신하지 않습니다. Gateway는 prod namespace의 해당 Host VirtualService만 연결합니다.
 
 검증 순서는 CRD/istiod→gateway Deployment Ready·Service endpoints→Host 일치와 Istio 분석→proxy 사설 upstream→tailnet HTTPS→CRUD입니다. 앞 단계만 통과하면 gateway 준비까지만 기록합니다. 장애 시 먼저 endpoint와 포트·Host·VirtualService destination을 확인하고, 이전 호환 Git 설정을 재적용합니다. public 우회 경로나 기존 Serve 서비스 재설정으로 복구하지 않습니다.
+
+## backend의 prod 반영
+
+`backend.yaml`은 `spring-app` chart에 `platform.yaml` 다음으로 적용합니다. Secret/ConfigMap은 #16 외부 주입 결과만 참조합니다. PostgreSQL·설정·migration 성공 전에는 readiness가 성공하지 않아야 하며 DB 장애를 liveness 재시작으로 대체하지 않습니다.
+
+검증한 public GHCR digest가 아직 없으므로 초기 `image.digest`는 비어 있고 Application은 `backend.yaml.example`로 비활성 상태입니다. chart는 빈 digest를 거부합니다. #19 CI가 PostgreSQL 테스트→이미지 게시→같은 digest 익명 pull을 확인한 뒤 실제 digest와 `backend.yaml` Application 활성화를 포함하는 설정 PR을 준비합니다. main에 merge하면 Argo CD가 자동 sync하며 CI는 클러스터에 접속하지 않습니다.
+
+HTTPS hostname/route는 #38·#23에서 실제 값을 확인하기 전까지 비활성입니다. digest 확인이 Host/사설 upstream 검증을 대신하지 않습니다. 최초 배포는 Secret/ConfigMap→PostgreSQL Ready/PVC→migration/backend Ready·sidecar·Service endpoints→자동 Synced/Healthy→tailnet HTTPS CRUD 순서로 확인합니다.
+
+prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. backend 재시작 후 같은 행을 다시 조회하고 마지막에 직접 만든 행만 삭제합니다. 실제 prod 접근이 준비되지 않아 이 검증과 이전 호환 digest/config Git revert는 아직 수행하지 않았습니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
