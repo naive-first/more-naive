@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-gateway
+  namespace: argocd
+spec:
+  project: more-naive-platform
+  sources:
+  - repoURL: https://github.com/istio/istio.git
+    targetRevision: 38ee3e789233243dfadb0eddbcbaafac87bc7141
+    path: manifests/charts/gateway
+    helm:
+      releaseName: istio-ingressgateway
+      valueFiles:
+      - $values/infra/environments/prod/istio-gateway.yaml
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: false
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
