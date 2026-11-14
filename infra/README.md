@@ -36,3 +36,5 @@ Host가 미확정이므로 `istio-route.yaml.example` values와 `ingress-route.y
 HTTPS hostname/route는 #38·#23에서 실제 값을 확인하기 전까지 비활성입니다. digest 확인이 Host/사설 upstream 검증을 대신하지 않습니다. 최초 배포는 Secret/ConfigMap→PostgreSQL Ready/PVC→migration/backend Ready·sidecar·Service endpoints→자동 Synced/Healthy→tailnet HTTPS CRUD 순서로 확인합니다.
 
 prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. backend 재시작 후 같은 행을 다시 조회하고 마지막에 직접 만든 행만 삭제합니다. 실제 prod 접근이 준비되지 않아 이 검증과 이전 호환 digest/config Git revert는 아직 수행하지 않았습니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
+
+관련 문서: [Tailscale 노드](tailscale/prod/README.md), [기존 proxy 검사](tailscale/prod/proxy/README.md), [PostgreSQL chart](charts/postgres/README.md), [backend chart](charts/spring-app/README.md), [설정 외부 주입](secrets/prod/README.md).
