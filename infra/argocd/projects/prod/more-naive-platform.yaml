@@ -6,7 +6,7 @@ metadata:
 spec:
   sourceRepos:
   - https://github.com/naive-first/more-naive.git
-  - https://istio-release.storage.googleapis.com/charts
+  - https://github.com/istio/istio.git
   destinations:
   - server: https://kubernetes.default.svc
     namespace: istio-system

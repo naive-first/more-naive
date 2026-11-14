@@ -34,6 +34,8 @@ def execute(args):
         return
     for name in ["argocd", "istio-system", "more-naive-prod"]:
         namespace = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": name}}
+        if name == "more-naive-prod":
+            namespace["metadata"]["labels"] = {"istio-injection": "enabled"}
         run([*kubectl, "apply", "-f", "-"], input=json.dumps(namespace), stdout=subprocess.DEVNULL)
     token = os.environ.get("ARGO_REPO_TOKEN")
     if token:
