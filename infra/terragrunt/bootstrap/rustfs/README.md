@@ -54,6 +54,7 @@ health 실패 시 data 디렉터리 UID/권한, loopback 포트 충돌, Docker �
 #4의 [state backend 절차](../../state-README.md)에 따라 관리자와 state 전용 인증을 구분합니다. 아래 도구는 고정 버전의 새 격리 컨테이너·임시 state key만 사용하며 prod network/compute와 실행 중인 다른 컨테이너를 변경하지 않습니다.
 
 ```bash
+(cd infra/terraform-exec && go build -o bin/infraexec .)
 uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_lock.py
 ```
 
@@ -64,3 +65,5 @@ uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_loc
 잠금이 남으면 잠금 소유 실행·실행 호스트와 상태를 먼저 확인합니다. 실행 중인 작업의 `.tflock`를 지우거나 `force-unlock`하지 않습니다. 실행이 끝났음이 확인된 고아 잠금에 한해서 관리자가 lock ID와 해당 backend/key를 대조한 뒤 수동 해제를 결정합니다. 백업 작업·보관처·복원 리허설은 만들지 않습니다.
 
 머지 후 인프라 관리자가 #8의 prod apply 전에 동일 고정 버전에서 격리 검증을 실행하고 결과를 확인합니다. 운영 state에 대한 중지/삭제 실험은 수행하지 않습니다.
+
+이 검증의 Terraform init/plan/apply는 #53의 Go hashicorp/terraform-exec 실행기를 호출합니다. Python은 임시 Docker·IAM·S3 fixture, 잠금 보유 marker와 assertion만 담당하며 Terraform CLI/Terragrunt run을 직접 실행하지 않습니다.
