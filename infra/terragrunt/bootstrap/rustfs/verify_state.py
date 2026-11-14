@@ -14,7 +14,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from verify_bootstrap import IMAGE, command, wait_health
+from verify_bootstrap import EXECUTABLE, IMAGE, command, wait_health
 
 
 HERE = Path(__file__).resolve().parent
@@ -51,7 +51,7 @@ def main(after_state=None):
             (unit / "main.tf").write_text('terraform { required_version = "= 1.17.2" }\nresource "terraform_data" "proof" { input = "state-persisted" }\n')
 
             def state(action, **kwargs):
-                args = [sys.executable, str(HERE / "state.py"), "--env", "prod", "--unit", "verify", action]
+                args = [str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "state", "--unit", "verify", action]
                 return subprocess.run([*args, *kwargs.get("extra", [])], env=kwargs.get("env", env), cwd=kwargs.get("cwd", unit),
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
