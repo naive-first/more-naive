@@ -6,7 +6,7 @@
 
 | 대상 | 실행 주체와 관리 방식 |
 | --- | --- |
-| 인프라 | 운영자 호스트의 Terragrunt가 Terraform CLI를 실행합니다. terraform-exec 라이브러리는 사용하지 않습니다. |
+| 인프라 | 운영자 호스트의 Go terraform-exec SDK가 Terraform CLI를 실행합니다. Terragrunt는 HCL의 source·backend·inputs 준비와 버킷 bootstrap만 담당합니다. |
 | RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 실제 관리 호스트는 운영자가 #39 적용 전에 확인합니다. |
 | bootstrap state | 관리 호스트의 캐시·checkout 밖 절대 경로에 local backend로 보관합니다. RustFS 자체 state를 자신의 S3 backend로 이전하지 않습니다. |
 | prod state | RustFS 버킷의 `more-naive/prod/<unit>/terraform.tfstate`와 native `.tflock`을 사용합니다. AWS S3/DynamoDB 자원은 만들지 않습니다. |
@@ -28,6 +28,7 @@
 | Kotlin | 2.2.21 | [Kotlin Gradle 호환 범위](https://kotlinlang.org/docs/gradle-configure-project.html)를 따릅니다. |
 | Gradle | 8.14.3 | 공식 Wrapper와 배포본 checksum은 backend README에 기록합니다. |
 | PostgreSQL | 17.12-alpine | [PostgreSQL 버전 정책](https://www.postgresql.org/support/versioning/)과 게시된 이미지 태그를 확인합니다. |
+| Go / terraform-exec | 1.27.4 / v0.26.0 | [공식 SDK](https://github.com/hashicorp/terraform-exec/tree/v0.26.0)를 실행 계층으로 사용합니다. |
 | Terraform | 1.17.2 | [공식 릴리스](https://github.com/hashicorp/terraform/releases/tag/v1.17.2)를 사용합니다. |
 | Terragrunt | 1.2.2 | [공식 릴리스](https://github.com/gruntwork-io/terragrunt/releases/tag/v1.2.2)를 사용합니다. |
 | RustFS | 1.0.5 | [공식 릴리스](https://github.com/rustfs/rustfs/releases/tag/1.0.5)의 이미지 digest를 bootstrap에서 검증합니다. |

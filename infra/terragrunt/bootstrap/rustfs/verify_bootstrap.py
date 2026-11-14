@@ -5,7 +5,6 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -16,6 +15,8 @@ from botocore.config import Config
 
 IMAGE = "rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74"
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+EXECUTABLE = ROOT / "infra/terraform-exec/bin/infraexec"
 
 
 def command(argv, env=None):
@@ -54,18 +55,18 @@ def main():
         env = os.environ.copy()
         env.update({"RUSTFS_DATA_DIR": str(data), "RUSTFS_STATE_PATH": str(state / "bootstrap.tfstate"),
                     "RUSTFS_ENDPOINT": endpoint, "RUSTFS_NAME": name,
-                    "TF_VAR_admin_access_key": secrets.token_hex(10),
-                    "TF_VAR_admin_secret_key": secrets.token_hex(24),
+                    "RUSTFS_ADMIN_ACCESS_KEY": secrets.token_hex(10),
+                    "RUSTFS_ADMIN_SECRET_KEY": secrets.token_hex(24),
                     "TG_DOWNLOAD_DIR": str(scratch / "cache-a"), "TF_LOG": "", "TG_LOG_LEVEL": "error"})
         command(["docker", "run", "--rm", "--user", "0", "--entrypoint", "sh", "-v", f"{data}:/data", IMAGE,
                  "-c", "chown 10001:10001 /data && chmod 700 /data"])
         try:
-            command([sys.executable, str(HERE / "run.py"), "--env", "prod", "init", "-input=false", "-no-color"], env)
-            command([sys.executable, str(HERE / "run.py"), "--env", "prod", "apply", "-input=false", "-auto-approve", "-no-color"], env)
+            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "init", "-input=false", "-no-color"], env)
+            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "apply", "-input=false", "-auto-approve", "-no-color"], env)
             wait_health(endpoint)
             s3 = boto3.client("s3", endpoint_url=endpoint, region_name="us-east-1",
-                              aws_access_key_id=env["TF_VAR_admin_access_key"],
-                              aws_secret_access_key=env["TF_VAR_admin_secret_key"],
+                              aws_access_key_id=env["RUSTFS_ADMIN_ACCESS_KEY"],
+                              aws_secret_access_key=env["RUSTFS_ADMIN_SECRET_KEY"],
                               config=Config(s3={"addressing_style": "path"}, retries={"max_attempts": 1}))
             s3.create_bucket(Bucket="bootstrap-proof")
             s3.put_object(Bucket="bootstrap-proof", Key="proof", Body=b"persistent-object")
@@ -73,17 +74,17 @@ def main():
             wait_health(endpoint)
             assert s3.get_object(Bucket="bootstrap-proof", Key="proof")["Body"].read() == b"persistent-object"
             print("PASS 1: S3 object survives restart")
-            command([sys.executable, str(HERE / "run.py"), "--env", "prod", "apply", "-replace=docker_container.rustfs",
+            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "apply", "-replace=docker_container.rustfs",
                      "-auto-approve", "-input=false", "-no-color"], env)
             wait_health(endpoint)
             assert s3.get_object(Bucket="bootstrap-proof", Key="proof")["Body"].read() == b"persistent-object"
             print("PASS 2: S3 object survives container replacement")
             env["TG_DOWNLOAD_DIR"] = str(scratch / "cache-b")
-            plan = command([sys.executable, str(HERE / "run.py"), "--env", "prod", "plan", "-input=false", "-no-color"], env)
+            plan = command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "plan", "-input=false", "-no-color"], env)
             assert "No changes." in plan
             assert (state / "bootstrap.tfstate").is_file()
             print("PASS 3: a fresh cache reads the same absolute local state")
-            denied = subprocess.run([sys.executable, str(HERE / "run.py"), "--env", "dev", "apply"],
+            denied = subprocess.run([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "dev", "--target", "bootstrap", "apply"],
                                     env=env, capture_output=True, text=True)
             assert denied.returncode != 0
             print("PASS 4: dev is refused before a write")

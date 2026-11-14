@@ -1,5 +1,6 @@
 .env
 .env.*
+/infra/terraform-exec/bin/
 env.dev
 env.prod
 *.tfstate

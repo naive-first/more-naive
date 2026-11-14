@@ -4,9 +4,9 @@ prod unit이 `state.hcl`을 선택적으로 포함하면 state는 `more-naive/pr
 
 ## 준비와 인증 경계
 
-#39 RustFS health가 정상이어야 합니다. 운영자가 #41 루트 `.env`에 `RUSTFS_ENDPOINT`, `RUSTFS_BUCKET`, `RUSTFS_REGION`, 관리자용 `RUSTFS_ADMIN_*`, 별도 state용 `RUSTFS_STATE_*`를 준비합니다. endpoint 누락·비정상 인증·dev 선택은 중단하며 AWS 기본 endpoint/local state로 전환하지 않습니다. HTTP는 loopback만 허용합니다. 원격 관리자는 인증서가 검증되는 사설 HTTPS나 loopback TLS 터널을 준비합니다.
+#39 RustFS health가 정상이어야 합니다. 운영자가 #41 루트 `env.prod`에 `RUSTFS_ENDPOINT`, `RUSTFS_BUCKET`, `RUSTFS_REGION`, 관리자용 `RUSTFS_ADMIN_*`, 별도 state용 `RUSTFS_STATE_*`를 준비합니다. endpoint 누락·비정상 인증·dev 선택은 중단하며 AWS 기본 endpoint/local state로 전환하지 않습니다. HTTP는 loopback만 허용합니다. 원격 관리자는 인증서가 검증되는 사설 HTTPS나 loopback TLS 터널을 준비합니다.
 
-`bootstrap/rustfs/state.py`는 state 전용 profile을 `$XDG_STATE_HOME/more-naive/rustfs/`(미설정 시 `~/.local/state/`)의 0700 디렉터리·0600 파일에 기록합니다. 경로는 endpoint/bucket별로 고정하고 원자적으로 교체하므로 backend 설정이 매번 달라지지 않습니다. 루트 `.env` 전체를 전달하지 않고 기존 `AWS_*`도 자식에서 제거합니다. HCL에는 파일 경로·profile만 담고 실제 provider 인증은 별도로 준비합니다. 이 디렉터리도 호스트 접근 제한·저장 디스크 보호 대상입니다. 인증 교체 시 다음 실행에서 갱신되며 프로젝트를 폐기할 때 운영자가 해당 profile 파일을 제거합니다.
+[Go terraform-exec 실행기](../terraform-exec/README.md)는 state 전용 profile을 `$XDG_STATE_HOME/more-naive/rustfs/`(미설정 시 `~/.local/state/`)의 0700 디렉터리·0600 파일에 기록합니다. 경로는 endpoint/bucket별로 고정하고 원자적으로 교체하므로 backend 설정이 매번 달라지지 않습니다. 루트 `env.prod` 전체를 전달하지 않고 기존 `AWS_*`도 자식에서 제거합니다. HCL에는 파일 경로·profile만 담고 실제 provider 인증은 별도로 준비합니다. 이 디렉터리도 호스트 접근 제한·저장 디스크 보호 대상입니다. 인증 교체 시 다음 실행에서 갱신되며 프로젝트를 폐기할 때 운영자가 해당 profile 파일을 제거합니다.
 
 Terragrunt 1.2.2는 `shared_credentials_file`을 shared config로 읽습니다. 같은 파일에 `[profile more-naive-state]`와 Terraform용 `[more-naive-state]`를 기록합니다. Terraform 1.17.2의 단수 필드 deprecation 경고는 알려진 호환성 사항입니다. [고정 Terragrunt 소스](https://github.com/gruntwork-io/terragrunt/blob/v1.2.2/internal/awshelper/config.go)와 [Terraform S3 backend 문서](https://developer.hashicorp.com/terraform/language/backend/s3)의 인증 입력 계약에 맞춘 구성입니다.
 
@@ -20,10 +20,10 @@ include "state" {
 }
 ```
 
-운영자가 해당 unit에서 root loader와 wrapper의 절대 경로를 사용해 실행합니다. 아래 `$REPO_ROOT`는 이 저장소의 절대 경로이며 값에 비밀을 넣지 않습니다.
+운영자가 해당 unit에서 빌드한 Go 실행기의 절대 경로를 사용해 실행합니다. 아래 `$REPO_ROOT`는 이 저장소의 절대 경로이며 값에 비밀을 넣지 않습니다.
 
 ```bash
-python3 "$REPO_ROOT/scripts/env.py" rustfs-admin -- python3 "$REPO_ROOT/infra/terragrunt/bootstrap/rustfs/state.py" --env prod --unit network bootstrap
+"$REPO_ROOT/infra/terraform-exec/bin/infraexec" --repo-root "$REPO_ROOT" --env prod --target state --unit network bootstrap
 python3 "$REPO_ROOT/infra/terragrunt/bootstrap/rustfs/state-policy.py" "$RUSTFS_BUCKET" > state-policy.json
 ```
 
@@ -34,18 +34,19 @@ python3 "$REPO_ROOT/infra/terragrunt/bootstrap/rustfs/state-policy.py" "$RUSTFS_
 ## init·실행과 기존 state
 
 ```bash
-python3 "$REPO_ROOT/scripts/env.py" rustfs-state -- python3 "$REPO_ROOT/infra/terragrunt/bootstrap/rustfs/state.py" --env prod --unit network init -input=false
-python3 "$REPO_ROOT/scripts/env.py" rustfs-state -- python3 "$REPO_ROOT/infra/terragrunt/bootstrap/rustfs/state.py" --env prod --unit network plan -input=false
+"$REPO_ROOT/infra/terraform-exec/bin/infraexec" --repo-root "$REPO_ROOT" --env prod --target state --unit network init -input=false
+"$REPO_ROOT/infra/terraform-exec/bin/infraexec" --repo-root "$REPO_ROOT" --env prod --target state --unit network plan -input=false
 ```
 
-새 state면 migration 없이 init합니다. 기존 local/remote state가 발견되면 작업을 멈추고 기존 backend·lineage·unit key를 운영자가 확인한 뒤 migration 여부를 결정합니다. wrapper는 `-migrate-state`나 빈 state 전환을 자동 실행하지 않습니다. plan은 검토 결과이며 실제 prod apply는 #8의 대상/계정/선행 검증 뒤 별도 승인으로 수행합니다.
+새 state면 migration 없이 init합니다. 기존 local/remote state가 발견되면 작업을 멈추고 기존 backend·lineage·unit key를 운영자가 확인한 뒤 migration 여부를 결정합니다. Go 실행기는 `-migrate-state`나 빈 state 전환을 자동 실행하지 않습니다. plan은 검토 결과이며 실제 prod apply는 #8의 대상/계정/선행 검증 뒤 별도 승인으로 수행합니다.
 
 ## 저장·전송 보호와 검증
 
-버킷 versioning은 백업/이력 범위 제외 결정에 따라 생성하지 않습니다. 고정 RustFS 1.0.5의 키 관리 미구성 로컬 시험에서 SSE-S3 AES256 요청은 `InvalidRequest`를 반환했습니다. 따라서 버킷 SSE를 자동 설정하지 않으며 host data 0700·제한된 관리자·보호된 저장 디스크를 사용합니다. loopback HTTP에서만 TLS 강제 버킷 정책을 생략하고 외부 HTTP는 wrapper가 거부합니다. 나머지 bucket 접근 보호는 Terragrunt 기본 bootstrap을 유지합니다. 보호 설정을 일괄 해제한 예제를 복사하지 않습니다.
+버킷 versioning은 백업/이력 범위 제외 결정에 따라 생성하지 않습니다. 고정 RustFS 1.0.5의 키 관리 미구성 로컬 시험에서 SSE-S3 AES256 요청은 `InvalidRequest`를 반환했습니다. 따라서 버킷 SSE를 자동 설정하지 않으며 host data 0700·제한된 관리자·보호된 저장 디스크를 사용합니다. loopback HTTP에서만 TLS 강제 버킷 정책을 생략하고 외부 HTTP는 Go 실행기가 거부합니다. 나머지 bucket 접근 보호는 Terragrunt 기본 bootstrap을 유지합니다. 보호 설정을 일괄 해제한 예제를 복사하지 않습니다.
 
 ```bash
 terragrunt hcl fmt --check --working-dir infra/terragrunt
+(cd infra/terraform-exec && go build -o bin/infraexec .)
 uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_state.py
 ```
 
