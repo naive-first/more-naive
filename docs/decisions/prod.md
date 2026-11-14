@@ -6,12 +6,12 @@
 
 | 대상 | 실행 주체와 관리 방식 |
 | --- | --- |
-| 인프라 | 운영자 호스트의 Terragrunt가 Terraform CLI를 실행합니다. terraform-exec 라이브러리는 사용하지 않습니다. |
+| 인프라 | 운영자 호스트에서 Terraform CLI와 Terragrunt를 직접 실행합니다. provider로 자원을 관리하며 필요한 설치 명령만 provisioner로 실행합니다. |
 | RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 실제 관리 호스트는 운영자가 #39 적용 전에 확인합니다. |
 | bootstrap state | 관리 호스트의 캐시·checkout 밖 절대 경로에 local backend로 보관합니다. RustFS 자체 state를 자신의 S3 backend로 이전하지 않습니다. |
 | prod state | RustFS 버킷의 `more-naive/prod/<unit>/terraform.tfstate`와 native `.tflock`을 사용합니다. AWS S3/DynamoDB 자원은 만들지 않습니다. |
 | Kubernetes | 최초 bootstrap이 k3s·Argo CD를 준비하고 이후 리소스는 선언 파일과 Helm values를 Argo CD가 관리합니다. |
-| 앱/DB 설정 | 루트 `.env`에서 필요한 값만 외부 주입 도구가 Secret/ConfigMap으로 저장합니다. chart와 Argo CD가 같은 값 객체를 중복 생성하지 않습니다. |
+| 앱/DB 설정 | 루트 `env.prod`에서 필요한 값만 외부 주입 도구가 Secret/ConfigMap으로 저장합니다. chart와 Argo CD가 같은 값 객체를 중복 생성하지 않습니다. |
 | 이미지 | CI가 `GITHUB_TOKEN`으로 GHCR에 게시하고 익명 digest pull 확인 후 동일 digest의 prod 설정 PR을 만듭니다. 클러스터 pull Secret은 사용하지 않습니다. |
 | 반복 배포 | 추적 브랜치에 설정 PR을 merge하면 Argo CD가 자동 sync합니다. 자동 prune은 비활성화합니다. |
 
@@ -49,16 +49,16 @@
 | prod namespace | `more-naive-prod`를 프로젝트 기본값으로 사용 | bootstrap이 실제 context와 함께 검증 |
 | StorageClass | k3s `local-path`를 후보로 사용하되 실제 존재·디스크 용량은 미확인 | 운영자, #36 배포 전 |
 | RustFS 호스트/영속 경로 | prod k3s 밖 Docker 호스트, 절대 경로는 외부 입력 | 운영자, #39 적용 전 |
-| state endpoint/버킷/최소 권한 인증 | 루트 `.env`의 RustFS 전용 입력 | 운영자, #4 실행 전 |
+| state endpoint/버킷/최소 권한 인증 | 루트 `env.prod`의 RustFS 전용 입력 | 운영자, #4 실행 전 |
 | SSH 개인키 | 현재 작업 호스트의 파일 경로 필요 | 사용자, 원격 검사 전 |
 | HTTPS hostname/TLS 종료/upstream | 기존 VM 설정을 읽은 뒤 확정. VM에서 ClusterIP 직접 접근을 가정하지 않음 | VM/tailnet 운영자, #38·#23 실행 전 |
 | 허용 사용자/접근 정책 | 기존 tailnet 정책을 먼저 확인. 공인 SSH·Funnel을 기본 개방하지 않음 | tailnet 운영자, #37·#38 실행 전 |
 
 ## 입력과 접근 경계
 
-루트 `.env` 하나에서 `LOCAL_DB_*`와 `PROD_DB_*`를 분리합니다. `.env`는 shell 코드로 실행하지 않고 명시적 loader가 선택한 소비자에게 필요한 키만 전달합니다. Spring과 Terragrunt가 dotenv를 자동으로 읽는다고 가정하지 않습니다. RustFS 관리자, state 전용 인증, 실제 인프라 provider 인증은 별개입니다.
+루트 `env.dev`와 `env.prod`로 환경을 구분하며 두 파일은 동일한 `DB_*`, `KUBE_*`, `SSH_*` 키를 사용합니다. 공통 템플릿은 `env.example`입니다. `python3 scripts/env.py --env dev|prod <consumer> -- <command>`로 환경과 소비자를 명시하고 필요한 키만 전달합니다. 환경 파일은 shell 코드로 실행하지 않으며 다른 환경 파일로 대체하지 않습니다. dev 선택은 로컬 앱/Compose에만 허용하고 인프라는 prod만 실행합니다. Spring과 Terragrunt가 dotenv를 자동으로 읽는다고 가정하지 않습니다. RustFS 관리자, state 전용 인증, 실제 인프라 provider 인증은 별개입니다.
 
-비밀값·Terraform state/plan·kubeconfig는 Git·이미지·원본 실행 로그에 포함하지 않습니다. `.env`와 bootstrap local state는 운영자 전용 권한으로 보관합니다. Secret controller·외부 비밀 저장소와 GHCR pull Secret은 도입하지 않습니다.
+비밀값·Terraform state/plan·kubeconfig는 Git·이미지·원본 실행 로그에 포함하지 않습니다. `env.dev`·`env.prod`와 bootstrap local state는 운영자 전용 권한으로 보관합니다. Secret controller·외부 비밀 저장소와 GHCR pull Secret은 도입하지 않습니다.
 
 ## 확인과 재실행
 
