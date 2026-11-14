@@ -6,7 +6,7 @@
 
 ## 입력과 실행
 
-Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`, Python 3가 필요합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `.env`의 아래 값을 준비합니다. #41의 공통 loader를 사용하며 `.env`를 shell로 실행하지 않습니다.
+Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`, Python 3가 필요합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `env.example`을 참고해 `env.prod`에 아래 값을 준비합니다. #41의 공통 loader에서 `--env prod`를 명시하며 환경 파일을 shell로 실행하지 않습니다.
 
 | 키 | 계약 |
 | --- | --- |
@@ -16,14 +16,14 @@ Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`, Python 3
 | `RUSTFS_NAME` | 컨테이너 이름, 생략하면 `more-naive-rustfs` |
 | `RUSTFS_ADMIN_ACCESS_KEY`, `RUSTFS_ADMIN_SECRET_KEY` | 고유 관리자 인증, loader가 `TF_VAR_admin_*`로 전달 |
 
-운영자가 data/state 디렉터리를 준비합니다. 실제 경로는 #2에서 확정합니다. state는 Docker 컨테이너 환경에 담긴 비밀값을 포함하므로 저장 디스크 보호·호스트 접근 제한·0700/0600 권한이 필요합니다. state, plan, `.terraform`, `.terragrunt-cache`, 실제 `.env`를 Git이나 PR 로그에 첨부하지 않습니다.
+운영자가 data/state 디렉터리를 준비합니다. 실제 관리 호스트와 경로는 #2의 계약에 따라 적용 전에 확정합니다. state는 Docker 컨테이너 환경에 담긴 비밀값을 포함하므로 저장 디스크 보호·호스트 접근 제한·0700/0600 권한이 필요합니다. state, plan, `.terraform`, `.terragrunt-cache`, 실제 `env.prod`를 Git이나 PR 로그에 첨부하지 않습니다.
 
-저장소 루트에서 실행합니다. loader가 다른 작업 디렉터리에서도 같은 루트 `.env`를 읽습니다.
+저장소 루트에서 실행합니다. loader가 다른 작업 디렉터리에서도 같은 루트 `env.prod`를 읽습니다.
 
 ```bash
-python3 scripts/env.py rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod init -input=false
-python3 scripts/env.py rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod plan -input=false
-python3 scripts/env.py rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod apply -input=false
+python3 scripts/env.py --env prod rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod init -input=false
+python3 scripts/env.py --env prod rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod plan -input=false
+python3 scripts/env.py --env prod rustfs-bootstrap -- python3 infra/terragrunt/bootstrap/rustfs/run.py --env prod apply -input=false
 curl --fail http://127.0.0.1:9000/health
 ```
 
