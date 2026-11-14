@@ -1,6 +1,6 @@
 # Backend
 
-JDK 21·Gradle 8.14.3·Kotlin 2.2.21·Spring Boot 3.5.16으로 실행하는 최소 backend입니다. PostgreSQL 17.12에 연결하며 생성·목록·상세 조회·수정 API를 제공합니다. 삭제는 후속 #33에서 추가합니다. [Spring Boot 지원 도구](https://docs.spring.io/spring-boot/3.5/system-requirements.html)와 [Kotlin Gradle 호환 범위](https://kotlinlang.org/docs/gradle-configure-project.html)를 기준으로 고정했습니다.
+JDK 21·Gradle 8.14.3·Kotlin 2.2.21·Spring Boot 3.5.16으로 실행하는 최소 backend입니다. PostgreSQL 17.12에 연결하며 test 행의 생성·목록·상세 조회·수정·삭제 API를 제공합니다. [Spring Boot 지원 도구](https://docs.spring.io/spring-boot/3.5/system-requirements.html)와 [Kotlin Gradle 호환 범위](https://kotlinlang.org/docs/gradle-configure-project.html)를 기준으로 고정했습니다.
 
 ## 앱 실행과 이미지
 
@@ -57,7 +57,7 @@ Windows에서는 JDK 21 설치 후 `gradlew.bat --version`을 사용합니다. L
 
 ## Test API 계약
 
-아래는 test API 계약과 요청 예시이며 실제 배포 성공 기록이 아닙니다. 현재 POST/GET/PUT이 구현되었고 DELETE는 #33에서 연결합니다. 배포 확인용 `test` 테이블의 행을 다룹니다. HTTP로 테이블 DDL을 실행하지 않습니다.
+아래는 구현한 test API 계약과 요청 예시이며 실제 prod 배포 성공 기록이 아닙니다. 배포 확인용 `test` 테이블의 행을 다룹니다. HTTP로 테이블 DDL을 실행하지 않습니다.
 
 테이블은 자동 생성 `bigint id`와 필수 `text value`만 저장합니다. value 중복을 허용하며 인증·회원·검색·페이징·추가 업무 규칙은 넣지 않습니다. 생성한 행은 배포 확인용 데이터이므로 사용한 id를 기록하고 검증 후 해당 행만 삭제합니다.
 

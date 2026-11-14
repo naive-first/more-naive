@@ -21,6 +21,11 @@ class TestRecordService(private val records: TestRecordRepository) {
         record.value = value
         return record
     }
+
+    @Transactional
+    fun delete(id: Long) {
+        records.delete(get(id))
+    }
 }
 
 class TestRecordNotFoundException : RuntimeException()

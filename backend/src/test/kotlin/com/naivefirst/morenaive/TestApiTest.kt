@@ -11,6 +11,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
@@ -209,5 +210,62 @@ class TestApiTest @Autowired constructor(
             content = """{"value":"after"}"""
         }.andExpect { status { isBadRequest() } }
         assertThat(records.count()).isZero()
+    }
+
+    @Test
+    @DisplayName("CRUD후 지정행 삭제는204이고 재조회와 재삭제는404이며 다른행이 남는다")
+    fun `CRUD후 지정행 삭제는204이고 재조회와 재삭제는404이며 다른행이 남는다`() {
+        // Given
+        val created = mvc.post("/api/tests") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"before"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
+        val id = mapper.readTree(created)["id"].asLong()
+        val other = records.saveAndFlush(TestRecord("untouched"))
+        mvc.get("/api/tests/$id").andExpect { jsonPath("$.value") { value("before") } }
+        mvc.put("/api/tests/$id") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"value":"after"}"""
+        }.andExpect { status { isOk() } }
+        // When
+        mvc.delete("/api/tests/$id").andExpect {
+            status { isNoContent() }
+            content { string("") }
+        }
+        // Then
+        mvc.get("/api/tests/$id").andExpect { status { isNotFound() } }
+        mvc.delete("/api/tests/$id").andExpect {
+            status { isNotFound() }
+            jsonPath("$.message") { exists() }
+        }
+        mvc.get("/api/tests/${other.id}").andExpect {
+            status { isOk() }
+            jsonPath("$.value") { value("untouched") }
+        }
+        assertThat(records.count()).isEqualTo(1)
+        assertThat(records.findById(id)).isEmpty()
+    }
+
+    @Test
+    @DisplayName("처음부터 없는 행의삭제는404이고 다른행을 지우지 않는다")
+    fun `처음부터 없는 행의삭제는404이고 다른행을 지우지 않는다`() {
+        // Given
+        val other = records.saveAndFlush(TestRecord("untouched"))
+        // When / Then
+        mvc.delete("/api/tests/9223372036854775807").andExpect { status { isNotFound() } }
+        assertThat(records.findById(other.id!!)).isPresent()
+        assertThat(records.count()).isEqualTo(1)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["abc", "0", "9223372036854775808"])
+    @DisplayName("잘못된 ID삭제는400이고 데이터를 지우지 않는다")
+    fun `잘못된 ID삭제는400이고 데이터를 지우지 않는다`(id: String) {
+        // Given
+        val other = records.saveAndFlush(TestRecord("untouched"))
+        // When / Then
+        mvc.delete("/api/tests/$id").andExpect { status { isBadRequest() } }
+        assertThat(records.findById(other.id!!)).isPresent()
+        assertThat(records.count()).isEqualTo(1)
     }
 }
