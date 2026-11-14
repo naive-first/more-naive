@@ -236,6 +236,57 @@ class EnvironmentCommandTest(unittest.TestCase):
         self.assertNotIn("TF_VAR_admin_secret_key", self.child())
         self.assertNotIn("RUSTFS_ADMIN_SECRET_KEY", self.child())
 
+    def _state_inputs(self) -> dict[str, str]:
+        return {
+            "RUSTFS_ENDPOINT": "http://127.0.0.1:9000", "RUSTFS_BUCKET": "fixture",
+            "RUSTFS_REGION": "us-east-1", "RUSTFS_STATE_ACCESS_KEY": "state-fixture",
+            "RUSTFS_STATE_SECRET_KEY": "state-secret-fixture",
+            "RUSTFS_ADMIN_ACCESS_KEY": "admin-fixture", "RUSTFS_ADMIN_SECRET_KEY": "admin-secret-fixture",
+            "XDG_STATE_HOME": str(self.root / "profiles"),
+        }
+
+    def test_profile_is_private_and_stable_after_atomic_rotation(self) -> None:
+        inputs = self._state_inputs()
+        result = self.run_command("rustfs-state", inputs, env_name="prod")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        credential = Path(self.child()["RUSTFS_CREDENTIALS_FILE"])
+        self.assertEqual(credential.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(credential.parent.stat().st_mode & 0o777, 0o700)
+        previous_inode = credential.stat().st_ino
+        inputs["RUSTFS_STATE_SECRET_KEY"] = "rotated-fixture"
+        result = self.run_command("rustfs-state", inputs, env_name="prod")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.child()["RUSTFS_CREDENTIALS_FILE"], str(credential))
+        self.assertNotEqual(credential.stat().st_ino, previous_inode)
+        self.assertIn("rotated-fixture", credential.read_text())
+
+    def test_admin_profile_does_not_overwrite_state_profile(self) -> None:
+        inputs = self._state_inputs()
+        self.assertEqual(self.run_command("rustfs-state", inputs, env_name="prod").returncode, 0)
+        credential = Path(self.child()["RUSTFS_CREDENTIALS_FILE"])
+        original = credential.read_bytes()
+        self.assertEqual(self.run_command("rustfs-admin", inputs, env_name="prod").returncode, 0)
+        self.assertNotEqual(self.child()["RUSTFS_CREDENTIALS_FILE"], str(credential))
+        self.assertEqual(credential.read_bytes(), original)
+        self.assertNotIn("RUSTFS_STATE_SECRET_KEY", self.child())
+
+    def test_insecure_profile_directory_stops_before_child(self) -> None:
+        inputs = self._state_inputs()
+        directory = self.root / "profiles/more-naive/rustfs"
+        directory.mkdir(parents=True)
+        directory.chmod(0o755)
+        result = self.run_command("rustfs-state", inputs, env_name="prod")
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_multiline_credentials_fail_without_secret_output(self) -> None:
+        inputs = self._state_inputs()
+        inputs["RUSTFS_STATE_SECRET_KEY"] = "private-marker\n[default]"
+        result = self.run_command("rustfs-state", inputs, env_name="prod")
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("private-marker", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
+
     def test_file_is_optional_when_selected_inputs_are_in_process(self) -> None:
         self.dotenv.unlink()
         result = self.run_command(

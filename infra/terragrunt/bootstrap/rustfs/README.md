@@ -6,7 +6,7 @@
 
 ## 입력과 실행
 
-Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`와 [Go 실행기](../../../terraform-exec/README.md)가 필요합니다. 먼저 `infra/terraform-exec`에서 `go build -o bin/infraexec .`로 빌드합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `env.example`을 참고해 `env.prod`에 아래 값을 준비합니다. Go 실행기에서 `--env prod`를 명시하며 환경 파일을 shell로 실행하지 않습니다.
+Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`가 필요합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `env.example`을 참고해 `env.prod`에 아래 값을 준비합니다. 공통 loader에 `--env prod`를 명시하며 환경 파일을 shell로 실행하지 않습니다.
 
 | 키 | 계약 |
 | --- | --- |
@@ -14,20 +14,20 @@ Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`와 [Go �
 | `RUSTFS_STATE_PATH` | checkout·cache 밖의 고정 절대 local state 파일, 상위 디렉터리 0700 |
 | `RUSTFS_ENDPOINT` | 같은 Docker 호스트의 `http://127.0.0.1:9000`; 다음 포트는 Console |
 | `RUSTFS_NAME` | 컨테이너 이름, 생략하면 `more-naive-rustfs` |
-| `RUSTFS_ADMIN_ACCESS_KEY`, `RUSTFS_ADMIN_SECRET_KEY` | 고유 관리자 인증, Go 실행기가 SDK 변수 파일로 전달 |
+| `RUSTFS_ADMIN_ACCESS_KEY`, `RUSTFS_ADMIN_SECRET_KEY` | 고유 관리자 인증, 공통 loader가 TF_VAR 환경변수로 전달 |
 
 운영자가 data/state 디렉터리를 준비합니다. 실제 관리 호스트와 경로는 #2의 계약에 따라 적용 전에 확정합니다. state는 Docker 컨테이너 환경에 담긴 비밀값을 포함하므로 저장 디스크 보호·호스트 접근 제한·0700/0600 권한이 필요합니다. state, plan, `.terraform`, `.terragrunt-cache`, 실제 `env.prod`를 Git이나 PR 로그에 첨부하지 않습니다.
 
-저장소 루트에서 실행합니다. Go 실행기가 저장소 루트의 `env.prod`를 읽습니다. 저장소 밖에서는 `--repo-root`로 절대 경로를 지정합니다.
+저장소 루트에서 실행합니다. 공통 loader는 루트 `env.prod`를 literal 값으로 읽고 필요한 키만 전달합니다. native before_hook는 Terraform 실행 전에 경로·UID·권한을 검증합니다.
 
 ```bash
-infra/terraform-exec/bin/infraexec --env prod --target bootstrap init -input=false
-infra/terraform-exec/bin/infraexec --env prod --target bootstrap plan -input=false -out=/absolute/private/bootstrap.tfplan
-infra/terraform-exec/bin/infraexec --env prod --target bootstrap apply -input=false /absolute/private/bootstrap.tfplan
+python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- init -input=false
+python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- plan -input=false -out=/absolute/private/bootstrap.tfplan
+python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- apply -input=false /absolute/private/bootstrap.tfplan
 curl --fail http://127.0.0.1:9000/health
 ```
 
-plan을 검토한 운영자가 저장된 plan을 apply에 전달합니다. SDK가 대화형 승인을 제공하지 않으므로 plan 없는 apply는 명시적 `-auto-approve`가 없으면 거부합니다. bootstrap에는 `state.hcl`을 포함하지 않으며 local backend 경로는 캐시나 실행 디렉터리에 따라 바뀌지 않습니다. RustFS가 아직 없어도 init/plan은 local backend로 실행됩니다. 자신의 state를 RustFS로 migration하지 않습니다.
+plan을 검토한 운영자가 저장된 plan을 apply에 전달합니다. Terraform native 승인 동작을 사용하며, 위 절차에서는 검토한 저장 plan만 적용합니다. bootstrap에는 `state.hcl`을 포함하지 않으며 local backend 경로는 캐시나 실행 디렉터리에 따라 바뀌지 않습니다. RustFS가 아직 없어도 init/plan은 local backend로 실행됩니다. 자신의 state를 RustFS로 migration하지 않습니다.
 
 ## 확인과 재실행
 
@@ -45,6 +45,6 @@ health 실패 시 data 디렉터리 UID/권한, loopback 포트 충돌, Docker �
 
 ## 중지와 삭제
 
-일반 prod network/compute 실행에는 이 bootstrap을 포함하지 않습니다. RustFS 중지는 remote backend를 사용하는 작업의 중단을 뜻하므로 작업이 없는지 먼저 확인합니다. bootstrap 삭제는 `--allow-destroy`와 `-auto-approve`를 명시해야 하며 컨테이너만 제거하고 host data 디렉터리는 제거하지 않습니다. 데이터의 영구 삭제는 관리자가 영향과 사용 중인 state를 별도로 확인한 후 수동 수행합니다. 백업 설정·복원 리허설은 이번 범위에 포함하지 않습니다.
+일반 prod network/compute 실행에는 이 bootstrap을 포함하지 않습니다. RustFS 중지는 remote backend를 사용하는 작업의 중단을 뜻하므로 작업이 없는지 먼저 확인합니다. bootstrap 삭제는 `RUSTFS_ALLOW_DESTROY=true`를 명시하고 Terraform 삭제 plan을 확인해야 하며 컨테이너만 제거하고 host data 디렉터리는 제거하지 않습니다. 데이터의 영구 삭제는 관리자가 영향과 사용 중인 state를 별도로 확인한 후 수동 수행합니다. 백업 설정·복원 리허설은 이번 범위에 포함하지 않습니다.
 
 머지 후 인프라 관리자가 #2의 관리 호스트에서 경로·인증·Docker 권한을 준비하고 위 init/plan/apply/health를 확인합니다. 로컬 격리 시험은 실제 운영 호스트의 완료 증거를 대신하지 않습니다.
