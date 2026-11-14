@@ -11,6 +11,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.transaction.annotation.Transactional
 
@@ -75,5 +76,67 @@ class TestApiTest @Autowired constructor(
         assertThat(response.size()).isEqualTo(1)
         assertThat(response["message"].asText()).isNotBlank()
         assertThat(records.count()).isEqualTo(before)
+    }
+
+    @Test
+    @DisplayName("빈 테이블 조회는 빈 배열이며 데이터를 만들지 않는다")
+    fun `빈 테이블 조회는 빈 배열이며 데이터를 만들지 않는다`() {
+        // Given
+        assertThat(records.count()).isZero()
+        // When / Then
+        mvc.get("/api/tests").andExpect {
+            status { isOk() }
+            content { json("[]") }
+        }
+        assertThat(records.count()).isZero()
+    }
+
+    @Test
+    @DisplayName("목록은 ID오름차순이고 상세는 저장된값이며 조회가 행을 변경하지 않는다")
+    fun `목록은 ID오름차순이고 상세는 저장된값이며 조회가 행을 변경하지 않는다`() {
+        // Given
+        val first = records.saveAndFlush(TestRecord("first"))
+        val second = records.saveAndFlush(TestRecord("second"))
+        // When
+        val body = mvc.get("/api/tests").andExpect { status { isOk() } }.andReturn().response.contentAsString
+        mvc.get("/api/tests/${second.id}").andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(second.id) }
+            jsonPath("$.value") { value("second") }
+        }
+        // Then
+        val rows = mapper.readTree(body)
+        assertThat(rows.map { it["id"].asLong() }).containsExactly(first.id, second.id)
+        assertThat(rows.map { it["value"].asText() }).containsExactly("first", "second")
+        assertThat(rows.all { it.size() == 2 }).isTrue()
+        assertThat(records.count()).isEqualTo(2)
+        assertThat(records.findById(first.id!!).orElseThrow().value).isEqualTo("first")
+    }
+
+    @Test
+    @DisplayName("없는 ID조회는 message만 포함한404이며 행을 만들지 않는다")
+    fun `없는 ID조회는 message만 포함한404이며 행을 만들지 않는다`() {
+        // Given
+        val before = records.count()
+        // When
+        val body = mvc.get("/api/tests/9223372036854775807").andExpect { status { isNotFound() } }.andReturn().response.contentAsString
+        // Then
+        val error = mapper.readTree(body)
+        assertThat(error.size()).isEqualTo(1)
+        assertThat(error["message"].asText()).isNotBlank()
+        assertThat(records.count()).isEqualTo(before)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["abc", "0", "-1", "9223372036854775808"])
+    @DisplayName("숫자가 아니거나 양수bigint범위를 벗어난 ID는400이다")
+    fun `숫자가 아니거나 양수bigint범위를 벗어난 ID는400이다`(id: String) {
+        // Given: 잘못된 ID
+        // When
+        val body = mvc.get("/api/tests/$id").andExpect { status { isBadRequest() } }.andReturn().response.contentAsString
+        // Then
+        val error = mapper.readTree(body)
+        assertThat(error.size()).isEqualTo(1)
+        assertThat(error["message"].asText()).isNotBlank()
     }
 }
