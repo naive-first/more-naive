@@ -12,6 +12,7 @@ Helm 4.3.2, Kubernetes 1.35 기준으로 검증합니다. PostgreSQL 이미지�
 | `image.repository/tag` | 버전 고정한 PostgreSQL 이미지 |
 | `storage.className/size` | 실제 환경 StorageClass 이름과 PVC 요청 용량 |
 | `resources` | PostgreSQL CPU·메모리 요청/상한 |
+| `podAnnotations` | Pod annotation 입력. sidecar 주입 namespace에서는 `sidecar.istio.io/inject: "false"`로 DB sidecar를 제외 |
 
 환경 공통 참조를 담은 `platform.yaml`을 먼저, `postgres.yaml`을 나중에 적용합니다. 실제 prod values는 후속 이슈에서 추가합니다. 아래는 비밀값 없는 렌더링 fixture입니다.
 

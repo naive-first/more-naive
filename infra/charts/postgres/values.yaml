@@ -1,6 +1,7 @@
 image:
   repository: postgres
   tag: 17.12-alpine
+podAnnotations: {}
 platform:
   configMapName: ""
   secretName: ""
