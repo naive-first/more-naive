@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location("bootstrap", Path(__file__).with_name("bootstrap.py"))
+spec = importlib.util.spec_from_file_location("bootstrap", Path(__file__).with_name("preflight.py"))
 bootstrap = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bootstrap)
 
@@ -41,7 +41,7 @@ class BootstrapGuardTest(unittest.TestCase):
     def test_wrong_remote_hostname_never_installs(self):
         reply = argparse.Namespace(stdout='study\nwrong-node\n{"BackendState":"Running"}')
         with patch.dict(bootstrap.os.environ, {"K3S_TOKEN": "test-only-token"}), \
-             patch.object(bootstrap, "tailnet_host"), \
+             patch.object(bootstrap.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("100.90.91.104", 22))]), \
              patch.object(bootstrap.subprocess, "run", return_value=reply) as ssh:
             with self.assertRaisesRegex(ValueError, "does not match"):
                 bootstrap.execute(self.args)
@@ -52,7 +52,7 @@ class BootstrapGuardTest(unittest.TestCase):
         self.args.apply = False
         reply = argparse.Namespace(stdout='study\nprod-node\n{"BackendState":"Running"}')
         with patch.dict(bootstrap.os.environ, {"K3S_TOKEN": "test-only-token"}), \
-             patch.object(bootstrap, "tailnet_host"), \
+             patch.object(bootstrap.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("100.90.91.104", 22))]), \
              patch.object(bootstrap.subprocess, "run", return_value=reply) as ssh:
             bootstrap.execute(self.args)
             self.assertEqual(ssh.call_count, 1)

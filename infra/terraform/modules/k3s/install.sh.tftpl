@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+umask 077
+staging=$1
+trap 'rm -rf "$staging"' EXIT
+[ "$(id -u)" = 0 ] || { echo 'sudo root required' >&2; exit 1; }
+[ "$(hostname)" = '${node}' ] || { echo 'remote hostname mismatch' >&2; exit 1; }
+directory=/etc/rancher/k3s
+printf '%s' '${config_base64}' | base64 -d > "$staging/config.yaml"
+if [ -e /usr/local/bin/k3s ]; then
+  /usr/local/bin/k3s --version | head -n 1 | grep -F 'k3s version ${version} ' >/dev/null || {
+    echo 'existing k3s version differs; explicit upgrade required' >&2; exit 1;
+  }
+  cmp -s "$staging/config.yaml" "$directory/config.yaml" && cmp -s "$staging/token" "$directory/more-naive-token" || {
+    echo 'existing config or token differs; review before changes' >&2; exit 1;
+  }
+  systemctl is-active --quiet '${role == "server" ? "k3s" : "k3s-agent"}'
+  echo 'existing pinned installation active; no changes'
+  exit 0
+fi
+[ ! -e "$directory/config.yaml" ] && [ ! -e "$directory/more-naive-token" ] || {
+  echo 'unowned k3s configuration exists; refusing overwrite' >&2; exit 1;
+}
+curl --fail --silent --show-error --max-time 60 --location \
+  'https://raw.githubusercontent.com/k3s-io/k3s/v1.35.10%2Bk3s1/install.sh' > "$staging/installer"
+printf '%s  %s\n' '8598e002e61d658fed7b7542fc6d2c66d8da6eae69e088830105d2ee1ffb6d91' "$staging/installer" | sha256sum -c -
+mkdir -p "$directory"
+install -m 600 "$staging/config.yaml" "$directory/config.yaml"
+install -m 600 "$staging/token" "$directory/more-naive-token"
+INSTALL_K3S_VERSION='${version}' INSTALL_K3S_EXEC='${role}' sh "$staging/installer"
+echo 'pinned installation completed'

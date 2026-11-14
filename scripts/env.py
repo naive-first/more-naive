@@ -60,6 +60,8 @@ OPTIONAL_KEYS: dict[str, tuple[str, ...]] = {
     "k3s": ("K3S_SERVER_URL", "K3S_TOKEN"),
     "tailscale-node": ("TAILSCALE_AUTH_KEY", "TAILSCALE_TAGS"),
 }
+CONSUMERS["k3s-terraform"] = CONSUMERS["k3s"] + CONSUMERS["rustfs-state"] + ("SSH_HOST_KEY", "K3S_TOKEN")
+OPTIONAL_KEYS["k3s-terraform"] = ("K3S_SERVER_URL",)
 RENAMES = {
     "rustfs-bootstrap": {
         "RUSTFS_ADMIN_ACCESS_KEY": "TF_VAR_admin_access_key",
@@ -162,7 +164,7 @@ def build_environment(consumer: str, environment: str) -> dict[str, str]:
     process_keys = PROCESS_KEYS
     if consumer in ("app", "compose", "rustfs-bootstrap"):
         process_keys += DOCKER_KEYS
-    if consumer in ("cluster-config", "argocd", "k3s", "tailscale-proxy"):
+    if consumer in ("cluster-config", "argocd", "k3s", "k3s-terraform", "tailscale-proxy"):
         process_keys += ("KUBECONFIG",)
     if consumer.startswith("rustfs-"):
         os.umask(0o077)
@@ -176,6 +178,13 @@ def build_environment(consumer: str, environment: str) -> dict[str, str]:
     )
     if consumer in ("rustfs-state", "rustfs-admin"):
         _prepare_rustfs_credentials(child_environment, consumer)
+    if consumer == "k3s-terraform":
+        os.umask(0o077)
+        process_keys = ("XDG_STATE_HOME", "TG_DOWNLOAD_DIR", "TG_NO_COLOR", "TG_NON_INTERACTIVE", "TG_LOG_LEVEL")
+        child_environment.update({key: os.environ[key] for key in process_keys if key in os.environ})
+        _prepare_rustfs_credentials(child_environment, "rustfs-state")
+        child_environment["RUSTFS_STATE_UNIT"] = "k3s"
+        child_environment["TF_VAR_token"] = inputs["K3S_TOKEN"]
     return child_environment
 
 

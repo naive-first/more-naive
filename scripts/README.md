@@ -43,6 +43,7 @@ python3 scripts/env.py --env <dev|prod> <consumer> -- <command> [argument ...]
 | `rustfs-bootstrap` | `RUSTFS_ADMIN_ACCESS_KEY/SECRET_KEY` → `TF_VAR_admin_access_key/admin_secret_key`; `RUSTFS_DATA_DIR/STATE_PATH/ENDPOINT` 그대로; `RUSTFS_NAME` 선택 | prod |
 | `rustfs-state` | `RUSTFS_ENDPOINT/BUCKET/REGION/STATE_ACCESS_KEY/STATE_SECRET_KEY` 그대로 | prod |
 | `rustfs-admin` | `RUSTFS_ENDPOINT/BUCKET/REGION/ADMIN_ACCESS_KEY/ADMIN_SECRET_KEY` 그대로 | prod |
+| `k3s-terraform` | `k3s` 입력과 `SSH_HOST_KEY`, server/agent 공통 `K3S_TOKEN`, RustFS state 인증; native prod k3s unit | prod |
 | `k3s` | `SSH_HOST/USER/KEY_FILE`, `KUBE_CONTEXT`, `NAMESPACE`, `K3S_NODE_NAME/ROLE`; `K3S_SERVER_URL/TOKEN`은 agent일 때 필수 | prod |
 | `tailscale-node` | `SSH_HOST/USER/KEY_FILE`, `TAILSCALE_NODE_NAME`; `TAILSCALE_AUTH_KEY/TAGS` 선택 | prod |
 | `tailscale-proxy` | `PROXY_SSH_HOST/USER/KEY_FILE/HTTPS_HOSTNAME`, `ISTIO_UPSTREAM_URL`, `KUBE_CONTEXT` | prod |
