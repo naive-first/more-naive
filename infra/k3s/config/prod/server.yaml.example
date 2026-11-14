@@ -1,0 +1,6 @@
+# 실제 node-name은 #9 bootstrap의 --node 입력으로 생성한다.
+write-kubeconfig-mode: "0600"
+token-file: /etc/rancher/k3s/more-naive-token
+disable:
+  - traefik
+  - servicelb
