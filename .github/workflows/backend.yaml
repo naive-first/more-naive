@@ -1,0 +1,111 @@
+name: Backend
+on:
+  pull_request:
+    paths: ['backend/**', '.github/**']
+  push:
+    branches: [main]
+    paths: ['backend/**', '.github/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.12-alpine
+        env:
+          POSTGRES_DB: more_naive_ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only-not-production
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U ci -d more_naive_ci" --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      DB_URL: jdbc:postgresql://127.0.0.1:5432/more_naive_ci
+      DB_USERNAME: ci
+      DB_PASSWORD: ci-only-not-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          validate-wrappers: true
+      - name: Promotion guard tests
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: PostgreSQL tests and executable JAR
+        run: backend/gradlew -p backend test bootJar --no-daemon --max-workers=2
+      - name: Build image without publishing
+        run: docker build -t more-naive-backend:ci backend
+      - name: Record JAR checksum
+        working-directory: backend/build/libs
+        run: sha256sum app.jar > app.jar.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-jar-${{ github.sha }}
+          path: |
+            backend/build/libs/app.jar
+            backend/build/libs/app.jar.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: backend-tests-${{ github.sha }}
+          path: backend/build/test-results/test/*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: backend-jar-${{ github.sha }}
+          path: backend/build/libs
+      - name: Verify the tested JAR
+        working-directory: backend/build/libs
+        run: sha256sum --check app.jar.sha256
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: image
+        with:
+          context: backend
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/naive-first/more-naive-backend:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/naive-first/more-naive
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Verify anonymous digest pull and open configuration PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/promote_image.py
