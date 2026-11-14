@@ -10,11 +10,11 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 
 | 작업 | 정본 문서 |
 | --- | --- |
-| 루트 `.env`·선택된 입력 전달 | [scripts](scripts/README.md) |
+| `env.dev`·`env.prod` 공통 키 전달 | [scripts](scripts/README.md) |
 | local 앱·PostgreSQL 테스트·최소 API | [backend](backend/README.md) |
 | RustFS 영속 bootstrap | [RustFS](infra/terragrunt/bootstrap/rustfs/README.md) |
 | state 인증·버킷·native 잠금 | [state backend](infra/terragrunt/state-README.md) |
-| prod Terraform 실행(Go SDK·Terragrunt 준비) | [Terragrunt](infra/terragrunt/README.md) |
+| prod Terraform/Terragrunt native 실행 | [Terragrunt](infra/terragrunt/README.md) |
 | 대상 노드 확인·k3s 설치 | [k3s](infra/k3s/README.md)·[prod 확인](infra/k3s/config/prod/README.md) |
 | Tailscale 노드·proxy 현황 | [Tailscale](infra/tailscale/prod/README.md) |
 | Argo CD 설치·권한·자동 sync | [Argo CD](infra/argocd/README.md) |
@@ -24,11 +24,11 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 
 ## local 검증과 prod 구축
 
-local은 루트 `.env`의 `LOCAL_DB_*`를 선택해 앱과 Compose 테스트 DB를 실행합니다. CI는 별도 테스트 값을 주입하며 prod `.env`가 필요하지 않습니다. 준비/명령/검증은 backend·scripts 문서를 따릅니다. dev 자원/자격 증명을 생성하지 않습니다.
+local은 루트 `env.dev`의 `DB_*`를 선택해 앱과 Compose 테스트 DB를 실행합니다. CI는 별도 테스트 값을 주입하며 `env.prod`가 필요하지 않습니다. 준비/명령/검증은 backend·scripts 문서를 따릅니다. dev 자원/자격 증명을 생성하지 않습니다.
 
-최초 prod 구축은 RustFS 관리 호스트·네트워크/서버 공급자·노드/SSH·proxy/TLS 입력이 먼저 확정돼야 합니다. 준비된 코드의 실행 순서는 RustFS bootstrap→버킷/최소 권한→잠금·장애 중단 검증→Go terraform-exec 기반 prod Terraform→Tailscale/k3s→외부 설정 주입→Argo CD bootstrap의 단계별 Ready 대기→검증 이미지 설정 PR입니다. provider와 #8 실행 계약이 미확정이므로 이 전체 순서를 자동 연결하는 최상위 bootstrap은 아직 구현하지 않았습니다. 이 문단을 완성된 진입점으로 취급하지 않습니다.
+최초 prod 구축은 RustFS 관리 호스트·네트워크/서버 공급자·노드/SSH·proxy/TLS 입력이 먼저 확정돼야 합니다. 준비된 코드의 실행 순서는 RustFS bootstrap→버킷/최소 권한→잠금·장애 중단 검증→native Terraform/Terragrunt→Tailscale/k3s→외부 설정 주입→Argo CD bootstrap의 단계별 Ready 대기→검증 이미지 설정 PR입니다. provider와 #8 실행 계약이 미확정이므로 이 전체 순서를 자동 연결하는 최상위 bootstrap은 아직 구현하지 않았습니다. 이 문단을 완성된 진입점으로 취급하지 않습니다.
 
-반복 배포는 PostgreSQL 테스트를 통과한 이미지의 public 익명 digest pull을 확인한 설정 PR을 main에 merge하면 Argo CD가 자동 sync합니다. 로컬 `.env`만 바꾼 경우에는 선택된 Secret/ConfigMap 주입 코드를 다시 실행하고 Pod 반영을 확인해야 하며 Git 변경으로 자동 갱신되는 값과 구분합니다. 최초 GHCR package 공개 전환과 Actions 자동 PR 허용 설정은 저장소 관리자가 준비합니다.
+반복 배포는 PostgreSQL 테스트를 통과한 이미지의 public 익명 digest pull을 확인한 설정 PR을 main에 merge하면 Argo CD가 자동 sync합니다. `env.prod`만 바꾼 경우에는 선택된 Secret/ConfigMap 주입 코드를 다시 실행하고 Pod 반영을 확인해야 하며 Git 변경으로 자동 갱신되는 값과 구분합니다. 최초 GHCR package 공개 전환과 Actions 자동 PR 허용 설정은 저장소 관리자가 준비합니다.
 
 ## prod smoke
 
