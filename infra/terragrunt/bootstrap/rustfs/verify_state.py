@@ -14,7 +14,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from verify_bootstrap import EXECUTABLE, IMAGE, command, wait_health
+from verify_bootstrap import LOADER, IMAGE, command, wait_health
 
 
 HERE = Path(__file__).resolve().parent
@@ -35,7 +35,7 @@ def main(after_state=None):
         env.update({"RUSTFS_ENDPOINT": endpoint, "RUSTFS_BUCKET": "state-proof", "RUSTFS_REGION": "us-east-1",
                     "RUSTFS_ADMIN_ACCESS_KEY": secrets.token_hex(10), "RUSTFS_ADMIN_SECRET_KEY": secrets.token_hex(24),
                     "RUSTFS_STATE_ACCESS_KEY": secrets.token_hex(10), "RUSTFS_STATE_SECRET_KEY": secrets.token_hex(24),
-                    "XDG_STATE_HOME": str(scratch / "profiles"), "TG_NO_COLOR": "true", "TG_NON_INTERACTIVE": "true",
+                    "RUSTFS_STATE_UNIT": "verify", "XDG_STATE_HOME": str(scratch / "profiles"), "TG_NO_COLOR": "true", "TG_NON_INTERACTIVE": "true",
                     "TF_CLI_ARGS": "-no-color", "AWS_EC2_METADATA_DISABLED": "true"})
         env_file = scratch / "docker.env"
         env_file.write_text("RUSTFS_ACCESS_KEY=" + env["RUSTFS_ADMIN_ACCESS_KEY"] + "\nRUSTFS_SECRET_KEY=" + env["RUSTFS_ADMIN_SECRET_KEY"] + "\nRUSTFS_OBS_LOGGER_LEVEL=error\n")
@@ -51,7 +51,9 @@ def main(after_state=None):
             (unit / "main.tf").write_text('terraform { required_version = "= 1.17.2" }\nresource "terraform_data" "proof" { input = "state-persisted" }\n')
 
             def state(action, **kwargs):
-                args = [str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "state", "--unit", "verify", action]
+                consumer = "rustfs-admin" if action == "bootstrap" else "rustfs-state"
+                args = [sys.executable, str(LOADER), "--env", "prod", consumer, "--", "terragrunt"]
+                args += ["backend", "bootstrap"] if action == "bootstrap" else ["run", "--", action]
                 return subprocess.run([*args, *kwargs.get("extra", [])], env=kwargs.get("env", env), cwd=kwargs.get("cwd", unit),
                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 

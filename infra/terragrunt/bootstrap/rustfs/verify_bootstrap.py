@@ -5,6 +5,7 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -16,7 +17,8 @@ from botocore.config import Config
 IMAGE = "rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74"
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
-EXECUTABLE = ROOT / "infra/terraform-exec/bin/infraexec"
+LOADER = ROOT / "scripts/env.py"
+BOOTSTRAP = [sys.executable, str(LOADER), "--env", "prod", "rustfs-bootstrap", "--", "terragrunt", "--working-dir", str(HERE), "run", "--"]
 
 
 def command(argv, env=None):
@@ -57,12 +59,12 @@ def main():
                     "RUSTFS_ENDPOINT": endpoint, "RUSTFS_NAME": name,
                     "RUSTFS_ADMIN_ACCESS_KEY": secrets.token_hex(10),
                     "RUSTFS_ADMIN_SECRET_KEY": secrets.token_hex(24),
-                    "TG_DOWNLOAD_DIR": str(scratch / "cache-a"), "TF_LOG": "", "TG_LOG_LEVEL": "error"})
+                    "TG_DOWNLOAD_DIR": str(scratch / "cache-a"), "TF_LOG": "", "TG_NO_COLOR": "true", "TG_LOG_LEVEL": "error"})
         command(["docker", "run", "--rm", "--user", "0", "--entrypoint", "sh", "-v", f"{data}:/data", IMAGE,
                  "-c", "chown 10001:10001 /data && chmod 700 /data"])
         try:
-            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "init", "-input=false", "-no-color"], env)
-            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "apply", "-input=false", "-auto-approve", "-no-color"], env)
+            command([*BOOTSTRAP, "init", "-input=false", "-no-color"], env)
+            command([*BOOTSTRAP, "apply", "-input=false", "-auto-approve", "-no-color"], env)
             wait_health(endpoint)
             s3 = boto3.client("s3", endpoint_url=endpoint, region_name="us-east-1",
                               aws_access_key_id=env["RUSTFS_ADMIN_ACCESS_KEY"],
@@ -74,17 +76,18 @@ def main():
             wait_health(endpoint)
             assert s3.get_object(Bucket="bootstrap-proof", Key="proof")["Body"].read() == b"persistent-object"
             print("PASS 1: S3 object survives restart")
-            command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "apply", "-replace=docker_container.rustfs",
+            command([*BOOTSTRAP, "apply", "-replace=docker_container.rustfs",
                      "-auto-approve", "-input=false", "-no-color"], env)
             wait_health(endpoint)
             assert s3.get_object(Bucket="bootstrap-proof", Key="proof")["Body"].read() == b"persistent-object"
             print("PASS 2: S3 object survives container replacement")
             env["TG_DOWNLOAD_DIR"] = str(scratch / "cache-b")
-            plan = command([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "prod", "--target", "bootstrap", "plan", "-input=false", "-no-color"], env)
+            plan = command([*BOOTSTRAP, "plan", "-input=false", "-no-color"], env)
             assert "No changes." in plan
             assert (state / "bootstrap.tfstate").is_file()
+            assert (state / "bootstrap.tfstate").stat().st_mode & 0o777 == 0o600
             print("PASS 3: a fresh cache reads the same absolute local state")
-            denied = subprocess.run([str(EXECUTABLE), "--repo-root", str(ROOT), "--env", "dev", "--target", "bootstrap", "apply"],
+            denied = subprocess.run([sys.executable, str(LOADER), "--env", "dev", "rustfs-bootstrap", "--", "terragrunt", "apply"],
                                     env=env, capture_output=True, text=True)
             assert denied.returncode != 0
             print("PASS 4: dev is refused before a write")

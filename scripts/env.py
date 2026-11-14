@@ -2,11 +2,14 @@
 """선택한 루트 env.dev/env.prod에서 실행 목적에 필요한 입력만 전달한다."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
+from urllib.parse import urlsplit
 
 
 DATABASE_KEYS = ("DATABASE", "USERNAME", "PASSWORD")
@@ -51,7 +54,9 @@ CONSUMERS: dict[str, tuple[str, ...]] = {
 }
 OPTIONAL_KEYS: dict[str, tuple[str, ...]] = {
     "argocd": ("ARGO_REPO_USERNAME", "ARGO_REPO_TOKEN"),
-    "rustfs-bootstrap": ("RUSTFS_NAME",),
+    "rustfs-bootstrap": ("RUSTFS_NAME", "RUSTFS_ALLOW_DESTROY"),
+    "rustfs-state": ("RUSTFS_STATE_UNIT",),
+    "rustfs-admin": ("RUSTFS_STATE_UNIT",),
     "k3s": ("K3S_SERVER_URL", "K3S_TOKEN"),
     "tailscale-node": ("TAILSCALE_AUTH_KEY", "TAILSCALE_TAGS"),
 }
@@ -105,6 +110,38 @@ def read_dotenv(dotenv: Path) -> dict[str, str]:
     return values
 
 
+def _prepare_rustfs_credentials(environment: dict[str, str], consumer: str) -> None:
+    endpoint = urlsplit(environment["RUSTFS_ENDPOINT"])
+    if (endpoint.scheme not in ("http", "https") or not endpoint.hostname
+            or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment):
+        raise ValueError("RUSTFS_ENDPOINT must be an explicit http(s) URL")
+    if endpoint.scheme == "http" and endpoint.hostname not in ("localhost", "127.0.0.1", "::1"):
+        raise ValueError("HTTP backend is allowed only on loopback")
+    prefix = "RUSTFS_ADMIN" if consumer == "rustfs-admin" else "RUSTFS_STATE"
+    if any(any(char in value for char in "\r\n\x00") for value in environment.values()):
+        raise ValueError("RustFS inputs must be single-line values")
+    base = Path(environment.get("XDG_STATE_HOME", str(Path(environment["HOME"]) / ".local/state")))
+    if not base.is_absolute():
+        raise ValueError("credential state directory must be absolute")
+    directory = base / "more-naive/rustfs"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if directory.stat().st_mode & 0o077 or directory.stat().st_uid != os.getuid():
+        raise ValueError("credential directory must be owned by the current user with mode 0700")
+    identity = hashlib.sha256((environment["RUSTFS_ENDPOINT"] + environment["RUSTFS_BUCKET"]).encode()).hexdigest()[:16]
+    destination = directory / f"{identity}-{consumer}.credentials"
+    descriptor, temporary = tempfile.mkstemp(prefix=".credentials-", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            for section in ("more-naive-state", "profile more-naive-state"):
+                output.write(f"[{section}]\naws_access_key_id = {environment[prefix + '_ACCESS_KEY']}\n"
+                             f"aws_secret_access_key = {environment[prefix + '_SECRET_KEY']}\n\n")
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    environment["RUSTFS_CREDENTIALS_FILE"] = str(destination)
+    environment["AWS_EC2_METADATA_DISABLED"] = "true"
+
+
 def build_environment(consumer: str, environment: str) -> dict[str, str]:
     if environment not in ("dev", "prod"):
         raise ValueError("environment must be dev or prod")
@@ -127,6 +164,9 @@ def build_environment(consumer: str, environment: str) -> dict[str, str]:
         process_keys += DOCKER_KEYS
     if consumer in ("cluster-config", "argocd", "k3s", "tailscale-proxy"):
         process_keys += ("KUBECONFIG",)
+    if consumer.startswith("rustfs-"):
+        os.umask(0o077)
+        process_keys += ("XDG_STATE_HOME", "TG_DOWNLOAD_DIR", "TG_NO_COLOR", "TG_NON_INTERACTIVE", "TG_LOG_LEVEL")
     child_environment = {
         key: os.environ[key] for key in process_keys if key in os.environ
     }
@@ -134,6 +174,8 @@ def build_environment(consumer: str, environment: str) -> dict[str, str]:
     child_environment.update(
         {renames.get(key, key): value for key, value in inputs.items() if value}
     )
+    if consumer in ("rustfs-state", "rustfs-admin"):
+        _prepare_rustfs_credentials(child_environment, consumer)
     return child_environment
 
 
