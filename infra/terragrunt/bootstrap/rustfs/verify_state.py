@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 
 
-def main():
+def main(after_state=None):
     with tempfile.TemporaryDirectory(prefix="more-naive-state-") as scratch:
         scratch = Path(scratch)
         data = scratch / "data"
@@ -110,6 +110,8 @@ def main():
                 result = state("plan", env=bad_env, extra=["-input=false"])
                 assert result.returncode != 0
             print("PASS 6: invalid credentials and missing endpoint fail closed")
+            if after_state is not None:
+                after_state(unit, second, env, name, client, state)
         finally:
             subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             command(["docker", "run", "--rm", "--user", "0", "--entrypoint", "sh", "-v", f"{data}:/data", IMAGE,
