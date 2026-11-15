@@ -32,11 +32,10 @@ local은 루트 `env.dev`의 `DB_*`를 선택해 앱과 Compose 테스트 DB를 
 
 ## prod smoke
 
-`scripts/smoke.py`는 지정한 context의 API 주소와 tailnet HTTPS origin을 확인합니다. 기본은 목록 조회만 수행하며 쓰기/Pod 재시작이 없습니다. 쓰기는 `--allow-write`, backend/DB 재시작은 각각 추가 opt-in이 필요합니다.
+`env.prod`의 `NAMESPACE=more-naive-prod`·`KUBE_CONTEXT`·`KUBE_SERVER`·`PROXY_HTTPS_HOSTNAME`을 준비하고 `config/env/.envrc`를 검토·허용합니다. Bash·curl·jq·kubectl·direnv가 필요합니다. `scripts/smoke.sh`는 지정한 context의 API 주소와 tailnet HTTPS origin을 확인합니다. 기본은 목록 조회만 수행하며 쓰기/Pod 재시작이 없습니다. 쓰기는 `--allow-write`, backend/DB 재시작은 각각 추가 opt-in이 필요합니다.
 
 ```bash
-python3 scripts/smoke.py --environment prod --context '<prod-context>' \
-  --expected-server 'https://<실제 API 주소>:6443' --url 'https://<실제 tailnet hostname>'
+MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/smoke.sh
 ```
 
 실제 대상과 영향을 확인한 후 `--allow-write`를 추가하면 직접 만든 두 행으로 생성→조회→수정→삭제/404를 확인하고 직접 만든 행만 정리합니다. `--restart-backend` 또는 `--restart-db`를 추가하면 해당 workload만 rollout restart하고 저장값을 재조회합니다. PVC 삭제·전체 테이블 정리·백업/복원은 실행하지 않습니다. 정리에 실패하면 출력한 도구 소유 row ID만 확인합니다.
