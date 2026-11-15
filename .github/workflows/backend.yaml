@@ -1,10 +1,10 @@
 name: Backend
 on:
   pull_request:
-    paths: ['backend/**', '.github/**']
+    paths: ['backend/**', '.github/**', 'scripts/**', 'config/env/**']
   push:
     branches: [main]
-    paths: ['backend/**', '.github/**']
+    paths: ['backend/**', '.github/**', 'scripts/**', 'config/env/**']
   workflow_dispatch:
 
 permissions:
@@ -42,6 +42,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           validate-wrappers: true
+      - name: Install checksum-pinned native tools
+        run: |
+          curl --fail --silent --show-error --location https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_linux_amd64 --output "$RUNNER_TEMP/yq"
+          echo "129534601871538efe0ba4c5e62a34fb1d5f469bcb975c4fddeb467d82974973  $RUNNER_TEMP/yq" | sha256sum --check --status
+          sudo install -m 755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
+      - name: Install checksum-pinned direnv
+        run: |
+          curl --fail --silent --show-error --location https://github.com/direnv/direnv/releases/download/v2.38.2/direnv.linux-amd64 --output "$RUNNER_TEMP/direnv"
+          echo "148820a187930d36ca6a204504e5cdb30d8396cd1a97e64c3b3f10d793c11247  $RUNNER_TEMP/direnv" | sha256sum --check --status
+          sudo install -m 755 "$RUNNER_TEMP/direnv" /usr/local/bin/direnv
+      - name: Standard environment contract
+        run: python3 -m unittest discover -s scripts -p 'test_environment.py' -v
       - name: Promotion guard tests
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: PostgreSQL tests and executable JAR
@@ -103,9 +115,14 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/naive-first/more-naive
             org.opencontainers.image.revision=${{ github.sha }}
+      - name: Install checksum-pinned native tools
+        run: |
+          curl --fail --silent --show-error --location https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_linux_amd64 --output "$RUNNER_TEMP/yq"
+          echo "129534601871538efe0ba4c5e62a34fb1d5f469bcb975c4fddeb467d82974973  $RUNNER_TEMP/yq" | sha256sum --check --status
+          sudo install -m 755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
       - name: Verify anonymous digest pull and open configuration PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           SOURCE_SHA: ${{ github.sha }}
-        run: python3 .github/scripts/promote_image.py
+        run: bash .github/scripts/promote-image.sh

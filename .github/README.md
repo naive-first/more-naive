@@ -1,6 +1,6 @@
 # Backend CI와 public 이미지 승격
 
-`Backend` workflow는 PR에서 PostgreSQL 17.12 테스트·JAR·컨테이너 빌드를 실행합니다. fork PR은 읽기 권한의 test job만 실행하며 게시·배포 설정 쓰기는 `main` push 또는 `main`의 수동 실행에서 테스트가 통과한 뒤 진행합니다. JDK 21과 고정 Wrapper를 사용하고 실제 prod `.env`를 읽지 않습니다.
+`Backend` workflow는 PR에서 PostgreSQL 17.12 테스트·JAR·컨테이너 빌드를 실행합니다. fork PR은 읽기 권한의 test job만 실행하며 게시·배포 설정 쓰기는 `main` push 또는 `main`의 수동 실행에서 테스트가 통과한 뒤 진행합니다. JDK 21과 고정 Wrapper를 사용하고 실제 `env.prod`를 읽지 않습니다.
 
 test job에서 만든 JAR의 checksum을 artifact와 함께 전달하고 publish job이 재확인합니다. `GITHUB_TOKEN`의 `packages: write`로 `ghcr.io/naive-first/more-naive-backend:sha-<commit>`을 게시하며 OCI source/revision label과 build-push action의 전체 digest를 기록합니다. 게시용 PAT와 클러스터 인증은 사용하지 않습니다. [GHCR 공식 인증·공개 범위 계약](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)을 따릅니다.
 
@@ -21,13 +21,14 @@ test job에서 만든 JAR의 checksum을 artifact와 함께 전달하고 publish
 
 승격 도구는 임시 빈 `{"auths":{}}` Docker config로 정확한 `repository@sha256`를 pull하고 `RepoDigests`를 대조합니다. 성공한 원본 명령·출력·종료 코드를 설정 PR 본문에 첨부합니다. 인증 실패·잘못된 digest·준비 파일 누락은 쓰기 전에 중단합니다.
 
-GitHub API는 최신 main을 기준으로 `image.digest`만 수정합니다. 최초에는 `.yaml.example`을 `.yaml`로 옮기는 변경을 같은 Git tree/커밋에 넣으며, 이미 활성 Application은 다시 만들지 않습니다. 설정 PR은 자동 병합하지 않고 이슈 닫기 키워드도 넣지 않습니다. GitHub API 실패 시 PR 설정·GITHUB_TOKEN 권한을 확인하고 재실행하며 다른 브랜치를 강제로 덮지 않습니다. CI는 kubeconfig·kubectl·Argo CD 자격 증명을 사용하지 않습니다.
+`bash .github/scripts/promote-image.sh`는 기본 git·gh·yq·jq·Docker CLI를 사용합니다. yq 4.54.3과 테스트용 direnv 2.38.2는 공식 binary SHA256을 검증해 설치합니다. 최신 main을 임시 git 저장소로 가져와 `image.digest`만 수정합니다. 최초에는 `.yaml.example`을 `.yaml`로 옮기는 변경을 같은 Git tree/커밋에 넣으며, 이미 활성 Application은 다시 만들지 않습니다. 설정 PR은 자동 병합하지 않고 이슈 닫기 키워드도 넣지 않습니다. gh/git 실패 시 PR 설정·GITHUB_TOKEN 권한을 확인하고 재실행하며 다른 브랜치를 강제로 덮지 않습니다. CI는 kubeconfig·kubectl·Argo CD 자격 증명을 사용하지 않습니다.
 
 ## 로컬 검사와 미수행 범위
 
 ```sh
+python3 -m unittest discover -s scripts -p 'test_environment.py' -v
 python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
 actionlint .github/workflows/backend.yaml
 ```
 
-Python 검사는 잘못된 입력·익명 pull 실패 시 쓰기 차단·동일 digest·최초 활성화의 원자적 변경을 확인합니다. 외부 GitHub API는 대역으로 검증합니다. actionlint는 workflow 문법 검사이며 실제 GitHub Actions 실행, GHCR public 전환, 익명 pull 성공, prod 배포를 증명하지 않습니다. 현재 Draft PR에서는 후자의 실제 검증이 남아 있습니다.
+Python 테스트는 실제 Bash 승격 진입점과 git·jq·yq를 실행해 잘못된 입력·익명 pull 실패 시 쓰기 차단·동일 digest·최초 활성화의 원자적 변경을 확인합니다. gh·Docker 경계는 대역으로 검증하고 git 쓰기는 테스트 전용 로컬 bare 저장소에만 수행합니다. 기존 승격 브랜치의 전체 tree가 기대 결과와 다르면 덮어쓰지 않습니다. actionlint는 workflow 문법 검사이며 실제 GitHub Actions 실행, GHCR public 전환, 익명 pull 성공, prod 배포를 증명하지 않습니다. 현재 Draft PR에서는 후자의 실제 검증이 남아 있습니다.
