@@ -27,6 +27,7 @@ env > "$FIXTURE_ROOT/child-environment"
         kubectl=binary/'kubectl';kubectl.write_text(common+'''case "$*" in
  *'config view'*) cat "$FIXTURE_ROOT/server" ;;
  *'--server-side'*) cat > "$FIXTURE_ROOT/secret" ;;
+ *'apply -f -'*) jq -c . >> "$FIXTURE_ROOT/namespaces" ;;
  *'condition=Established'*) [[ ! -f $FIXTURE_ROOT/fail-crd ]] ;;
 esac
 ''');kubectl.chmod(0o700)
@@ -54,6 +55,13 @@ esac
         self.assertEqual(len(self.calls()),2)
         self.assertTrue(self.calls()[-1].startswith('helm template'))
         self.assertFalse(any(' apply ' in call for call in self.calls()))
+
+    def test_prod_namespace_has_injection_before_root_registration(self):
+        result=self.invoke(True);self.assertEqual(result.returncode,0,result.stderr)
+        namespaces=[json.loads(line) for line in (self.root/'namespaces').read_text().splitlines()]
+        prod=next(item for item in namespaces if item['metadata']['name']=='more-naive-prod')
+        self.assertEqual(prod['metadata']['labels'],{'istio-injection':'enabled'})
+        self.assertEqual({item['metadata']['name'] for item in namespaces},{'istio-system','more-naive-prod'})
 
     def test_crd_failure_stops_control_plane_and_root_registration(self):
         declarations=self.root/'infra/argocd/applications/prod';declarations.mkdir(parents=True)
