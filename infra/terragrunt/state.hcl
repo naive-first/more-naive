@@ -1,5 +1,6 @@
 locals {
-  state_unit = get_env("RUSTFS_STATE_UNIT")
+  state_unit = basename(get_original_terragrunt_dir())
+  preflight  = run_cmd("--terragrunt-quiet", "bash", "${get_parent_terragrunt_dir("state")}/state-preflight.sh")
 }
 
 remote_state {
