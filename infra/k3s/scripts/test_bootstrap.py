@@ -1,62 +1,64 @@
-import argparse
-import importlib.util
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
-
-spec = importlib.util.spec_from_file_location("bootstrap", Path(__file__).with_name("preflight.py"))
-bootstrap = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bootstrap)
 
 
 class BootstrapGuardTest(unittest.TestCase):
     def setUp(self):
-        self.key = tempfile.NamedTemporaryFile()
-        self.addCleanup(self.key.close)
-        self.args = argparse.Namespace(environment="prod", node="prod-node", user="study",
-                                       key_file=self.key.name, role="server", host="node.ts.net", apply=True)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.binary = self.root / 'bin'; self.binary.mkdir()
+        key = self.root / 'key'; key.write_text('fixture'); key.chmod(0o600)
+        self.environment = {'PATH': str(self.binary) + ':' + os.environ['PATH'], 'HOME': str(self.root),
+            'FIXTURE_ROOT': str(self.root), 'MORE_NAIVE_ENV': 'prod', 'SSH_HOST': 'fixture.ts.net',
+            'SSH_USER': 'study', 'SSH_KEY_FILE': str(key), 'K3S_NODE_NAME': 'prod-node',
+            'K3S_ROLE': 'server', 'K3S_TOKEN': 'test-only-token'}
+        (self.root/'dns').write_text('fixture.ts.net. 60 IN A 100.90.91.104\n')
+        (self.root/'hostname').write_text('prod-node')
+        (self.root/'status').write_text('{"BackendState":"Running"}')
+        for name, text in {'dig': 'cat "$FIXTURE_ROOT/dns"', 'ssh': '''printf '%s\\n' "$*" >> "$FIXTURE_ROOT/calls"
+case "$*" in *'id -un'*) printf 'study\\n%s\\n' "$(cat "$FIXTURE_ROOT/hostname")" ;; *) cat "$FIXTURE_ROOT/status" ;; esac'''} .items():
+            binary = self.binary/name; binary.write_text('#!/usr/bin/env bash\nset -eu\n'+text+'\n'); binary.chmod(0o700)
+        self.script = Path(__file__).with_name('preflight.sh')
+
+    def invoke(self, **changes):
+        return subprocess.run(['bash', str(self.script)], env={**self.environment, **changes}, capture_output=True, text=True)
+
+    def calls(self):
+        file=self.root/'calls'
+        return file.read_text().splitlines() if file.exists() else []
 
     def test_dev_never_contacts_ssh(self):
-        self.args.environment = "dev"
-        with patch.object(bootstrap.subprocess, "run") as ssh:
-            with self.assertRaisesRegex(ValueError, "prod"):
-                bootstrap.execute(self.args)
-            ssh.assert_not_called()
+        self.assertNotEqual(self.invoke(MORE_NAIVE_ENV='dev').returncode, 0)
+        self.assertEqual(self.calls(), [])
 
     def test_missing_token_never_contacts_ssh(self):
-        with patch.dict(bootstrap.os.environ, {}, clear=True), patch.object(bootstrap.subprocess, "run") as ssh:
-            with self.assertRaisesRegex(ValueError, "K3S_TOKEN"):
-                bootstrap.execute(self.args)
-            ssh.assert_not_called()
+        self.assertNotEqual(self.invoke(K3S_TOKEN='').returncode, 0)
+        self.assertEqual(self.calls(), [])
 
     def test_public_or_mixed_dns_rejected(self):
-        tailnet = (2, 1, 6, "", ("100.90.91.104", 22))
-        public = (2, 1, 6, "", ("8.8.8.8", 22))
-        for answers in [[public], [tailnet, public]]:
-            with self.subTest(answers=answers), patch.object(bootstrap.socket, "getaddrinfo", return_value=answers):
-                with self.assertRaisesRegex(ValueError, "tailnet"):
-                    bootstrap.tailnet_host("node.ts.net")
+        for records in ['fixture.ts.net. 60 IN A 8.8.8.8\n', 'fixture.ts.net. 60 IN A 100.90.91.104\nfixture.ts.net. 60 IN AAAA 2001:4860:4860::8888\n']:
+            (self.root/'dns').write_text(records)
+            self.assertNotEqual(self.invoke().returncode, 0)
+            self.assertEqual(self.calls(), [])
+        self.assertEqual(self.invoke(SSH_HOST="FD7A:115C:A1E0::1").returncode, 0)
 
     def test_wrong_remote_hostname_never_installs(self):
-        reply = argparse.Namespace(stdout='study\nwrong-node\n{"BackendState":"Running"}')
-        with patch.dict(bootstrap.os.environ, {"K3S_TOKEN": "test-only-token"}), \
-             patch.object(bootstrap.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("100.90.91.104", 22))]), \
-             patch.object(bootstrap.subprocess, "run", return_value=reply) as ssh:
-            with self.assertRaisesRegex(ValueError, "does not match"):
-                bootstrap.execute(self.args)
-            self.assertEqual(ssh.call_count, 1)
-            self.assertNotIn("test-only-token", str(ssh.call_args))
+        (self.root/'hostname').write_text('wrong-node')
+        result=self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.calls()), 1)
+        self.assertNotIn('test-only-token', str(self.calls())+result.stdout+result.stderr)
 
     def test_preflight_does_not_install(self):
-        self.args.apply = False
-        reply = argparse.Namespace(stdout='study\nprod-node\n{"BackendState":"Running"}')
-        with patch.dict(bootstrap.os.environ, {"K3S_TOKEN": "test-only-token"}), \
-             patch.object(bootstrap.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("100.90.91.104", 22))]), \
-             patch.object(bootstrap.subprocess, "run", return_value=reply) as ssh:
-            bootstrap.execute(self.args)
-            self.assertEqual(ssh.call_count, 1)
+        result=self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.calls()), 2)
+        self.assertTrue(all('StrictHostKeyChecking=yes' in call for call in self.calls()))
+        self.assertFalse(any('install.sh' in call or 'python' in call for call in self.calls()))
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == '__main__': unittest.main()

@@ -34,7 +34,7 @@ resource "terraform_data" "registration" {
   triggers_replace = [timestamp()]
   depends_on       = [helm_release.argocd]
   provisioner "local-exec" {
-    command = "python3 \"$ARGO_BOOTSTRAP_SCRIPT\" --environment prod --context \"$KUBE_CONTEXT\" --expected-server \"$KUBE_SERVER\" --apply"
+    command = "bash \"$ARGO_BOOTSTRAP_SCRIPT\" --apply"
     environment = {
       ARGO_BOOTSTRAP_SCRIPT = var.bootstrap_script
       KUBE_CONTEXT          = var.context

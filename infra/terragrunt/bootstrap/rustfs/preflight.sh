@@ -2,6 +2,7 @@
 # Run before Terraform opens local state or accesses the Docker provider.
 set -eu
 umask 077
+[ "${MORE_NAIVE_ENV:-}" = prod ] || { echo 'bootstrap requires explicit prod' >&2; exit 2; }
 repo=$1
 action=$2
 if [ "$action" = destroy ] && [ "${RUSTFS_ALLOW_DESTROY:-}" != true ]; then
