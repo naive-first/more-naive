@@ -7,14 +7,13 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
-import sys
 import tempfile
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from verify_bootstrap import LOADER, IMAGE, command, wait_health
+from verify_bootstrap import IMAGE, command, wait_health
 
 
 HERE = Path(__file__).resolve().parent
@@ -32,10 +31,10 @@ def main(after_state=None):
         name = "more-naive-state-" + secrets.token_hex(5)
         endpoint = f"http://127.0.0.1:{port}"
         env = os.environ.copy()
-        env.update({"RUSTFS_ENDPOINT": endpoint, "RUSTFS_BUCKET": "state-proof", "RUSTFS_REGION": "us-east-1",
+        env.update({"MORE_NAIVE_ENV": "prod", "RUSTFS_ENDPOINT": endpoint, "RUSTFS_BUCKET": "state-proof", "RUSTFS_REGION": "us-east-1",
                     "RUSTFS_ADMIN_ACCESS_KEY": secrets.token_hex(10), "RUSTFS_ADMIN_SECRET_KEY": secrets.token_hex(24),
                     "RUSTFS_STATE_ACCESS_KEY": secrets.token_hex(10), "RUSTFS_STATE_SECRET_KEY": secrets.token_hex(24),
-                    "RUSTFS_STATE_UNIT": "verify", "XDG_STATE_HOME": str(scratch / "profiles"), "TG_NO_COLOR": "true", "TG_NON_INTERACTIVE": "true",
+                    "TG_NO_COLOR": "true", "TG_NON_INTERACTIVE": "true",
                     "TF_CLI_ARGS": "-no-color", "AWS_EC2_METADATA_DISABLED": "true"})
         env_file = scratch / "docker.env"
         env_file.write_text("RUSTFS_ACCESS_KEY=" + env["RUSTFS_ADMIN_ACCESS_KEY"] + "\nRUSTFS_SECRET_KEY=" + env["RUSTFS_ADMIN_SECRET_KEY"] + "\nRUSTFS_OBS_LOGGER_LEVEL=error\n")
@@ -45,17 +44,21 @@ def main(after_state=None):
         command(["docker", "run", "-d", "--name", name, "--env-file", str(env_file), "-v", f"{data}:/data", "-p", f"127.0.0.1:{port}:9000", IMAGE, "/data"])
         try:
             wait_health(endpoint)
-            unit = scratch / "unit-a"
-            unit.mkdir()
+            unit = scratch / "unit-a/verify"
+            unit.mkdir(parents=True)
             (unit / "terragrunt.hcl").write_text('include "state" { path = "' + str(ROOT / "infra/terragrunt/state.hcl") + '" }\n')
             (unit / "main.tf").write_text('terraform { required_version = "= 1.17.2" }\nresource "terraform_data" "proof" { input = "state-persisted" }\n')
 
             def state(action, **kwargs):
-                consumer = "rustfs-admin" if action == "bootstrap" else "rustfs-state"
-                args = [sys.executable, str(LOADER), "--env", "prod", consumer, "--", "terragrunt"]
-                args += ["backend", "bootstrap"] if action == "bootstrap" else ["run", "--", action]
-                return subprocess.run([*args, *kwargs.get("extra", [])], env=kwargs.get("env", env), cwd=kwargs.get("cwd", unit),
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                selected = kwargs.get("env", env).copy()
+                prefix = "RUSTFS_ADMIN" if action == "bootstrap" else "RUSTFS_STATE"
+                profile = scratch / (prefix + ".credentials")
+                profile.write_text("".join(f"[{section}]\naws_access_key_id = {selected[prefix + '_ACCESS_KEY']}\naws_secret_access_key = {selected[prefix + '_SECRET_KEY']}\n\n" for section in ("more-naive-state", "profile more-naive-state")))
+                profile.chmod(0o600)
+                selected["RUSTFS_CREDENTIALS_FILE"] = str(profile)
+                args = ["terragrunt"] + (["backend", "bootstrap"] if action == "bootstrap" else ["run", "--", action])
+                return subprocess.run([*args, *kwargs.get("extra", [])], env=selected, cwd=kwargs.get("cwd", unit),
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, umask=0o077)
 
             result = state("bootstrap")
             print(result.stdout)
@@ -72,7 +75,7 @@ def main(after_state=None):
             except ClientError as error:
                 print("SSE-S3 unavailable without configured key management:", error.response["Error"]["Code"])
             policy_file = scratch / "policy.json"
-            policy_file.write_text(command([sys.executable, str(HERE / "state-policy.py"), "state-proof"]))
+            policy_file.write_text(command(["jq", "-n", "-f", str(HERE / "state-policy.jq")], env))
             command(["docker", "cp", str(policy_file), name + ":/tmp/state-policy.json"])
             # rc 인증과 IAM 생성 응답에는 비밀값이 포함될 수 있어 출력하지 않는다.
             for args in [["alias", "set", "local", "http://127.0.0.1:9000", env["RUSTFS_ADMIN_ACCESS_KEY"], env["RUSTFS_ADMIN_SECRET_KEY"]],
@@ -97,8 +100,8 @@ def main(after_state=None):
                 except ClientError as error:
                     assert error.response["ResponseMetadata"]["HTTPStatusCode"] == 403
             print("PASS 4: other prefix and bucket writes denied")
-            second = scratch / "unit-b"
-            second.mkdir()
+            second = scratch / "unit-b/verify"
+            second.mkdir(parents=True)
             for file in ["terragrunt.hcl", "main.tf"]:
                 (second / file).write_text((unit / file).read_text())
             result = state("init", cwd=second, extra=["-input=false"])

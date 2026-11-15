@@ -6,7 +6,7 @@
 
 ## 입력과 실행
 
-Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`가 필요합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `env.example`을 참고해 `env.prod`에 아래 값을 준비합니다. 공통 loader에 `--env prod`를 명시하며 환경 파일을 shell로 실행하지 않습니다.
+Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`가 필요합니다. Docker 소켓 권한은 호스트 관리자 권한과 동등하게 취급합니다. 루트 `env.example`을 참고해 `env.prod`에 아래 값을 준비합니다. `MORE_NAIVE_ENV=prod direnv exec config/env`로 선택하며 환경 파일을 shell로 실행하지 않습니다.
 
 | 키 | 계약 |
 | --- | --- |
@@ -14,16 +14,17 @@ Docker 소켓 접근 권한, 고정 버전의 `terraform`/`terragrunt`가 필요
 | `RUSTFS_STATE_PATH` | checkout·cache 밖의 고정 절대 local state 파일, 상위 디렉터리 0700 |
 | `RUSTFS_ENDPOINT` | 같은 Docker 호스트의 `http://127.0.0.1:9000`; 다음 포트는 Console |
 | `RUSTFS_NAME` | 컨테이너 이름, 생략하면 `more-naive-rustfs` |
-| `RUSTFS_ADMIN_ACCESS_KEY`, `RUSTFS_ADMIN_SECRET_KEY` | 고유 관리자 인증, 공통 loader가 TF_VAR 환경변수로 전달 |
+| `RUSTFS_ADMIN_ACCESS_KEY`, `RUSTFS_ADMIN_SECRET_KEY` | 고유 관리자 인증, native Terragrunt가 TF_VAR 환경변수로 전달 |
 
 운영자가 data/state 디렉터리를 준비합니다. 실제 관리 호스트와 경로는 #2의 계약에 따라 적용 전에 확정합니다. state는 Docker 컨테이너 환경에 담긴 비밀값을 포함하므로 저장 디스크 보호·호스트 접근 제한·0700/0600 권한이 필요합니다. state, plan, `.terraform`, `.terragrunt-cache`, 실제 `env.prod`를 Git이나 PR 로그에 첨부하지 않습니다.
 
-저장소 루트에서 실행합니다. 공통 loader는 루트 `env.prod`를 literal 값으로 읽고 필요한 키만 전달합니다. native before_hook는 Terraform 실행 전에 경로·UID·권한을 검증합니다.
+저장소 루트에서 실행합니다. direnv는 루트 `env.prod`를 표준 dotenv로 읽습니다. `direnv allow config/env`를 먼저 검토·허용합니다. native before_hook는 Terraform 실행 전에 경로·UID·권한을 검증합니다.
 
 ```bash
-python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- init -input=false
-python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- plan -input=false -out=/absolute/private/bootstrap.tfplan
-python3 scripts/env.py --env prod rustfs-bootstrap -- terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- apply -input=false /absolute/private/bootstrap.tfplan
+umask 077
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- init -input=false
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- plan -input=false -out=/absolute/private/bootstrap.tfplan
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/bootstrap/rustfs run -- apply -input=false /absolute/private/bootstrap.tfplan
 curl --fail http://127.0.0.1:9000/health
 ```
 
