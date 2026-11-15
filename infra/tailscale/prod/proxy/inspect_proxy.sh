@@ -43,8 +43,9 @@ if [[ -n $upstream ]]; then
     fi
   done <<< "$addresses"
   first=${addresses%%$'\n'*}; [[ $first != *:* ]] || first="[$first]"
-  resolve_host=$host; [[ $host != *:* ]] || resolve_host="[$host]"
-  upstream_status=$(curl --silent --show-error --noproxy '*' --max-time 10 --resolve "$resolve_host:$port:$first" --header "Host: $gateway" --output /dev/null --write-out '%{http_code}' "$upstream")
+  resolve=()
+  if [[ $host != *:* && ! $host =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then resolve=(--resolve "$host:$port:$first"); fi
+  upstream_status=$(curl --silent --show-error --noproxy '*' --max-time 10 "${resolve[@]}" --header "Host: $gateway" --output /dev/null --write-out '%{http_code}' "$upstream")
 fi
 printf '%s\n%s' "$status" "$serve" | jq -s --arg hostname "$(hostname)" --arg user "$(id -un)" --argjson sudo "$sudo_ok" --arg upstream "$upstream_status" '{hostname:$hostname,user:$user,tailscale_state:.[0].BackendState,dns_name:.[0].Self.DNSName,tailnet_ips:(.[0].Self.TailscaleIPs // []),serve_tcp_ports:((.[1].TCP // {})|keys),serve_web_hosts:((.[1].Web // {})|keys),sudo_noninteractive:$sudo,upstream_status:$upstream}'
 REMOTE

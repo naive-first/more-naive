@@ -73,6 +73,11 @@ echo -n 503
         args=(self.root/'http').read_text();self.assertIn('--resolve gateway.internal:8080:10.0.0.2',args)
         self.assertIn('Host: api.internal',args);self.assertNotIn('--location',args)
 
+    def test_private_ipv6_literal_needs_no_dns_override(self):
+        r=self.invoke(PROXY_UPSTREAM_URL='http://[fd00::1]:8080/',PROXY_GATEWAY_HOST='api.internal')
+        self.assertEqual(r.returncode,0,r.stderr)
+        args=(self.root/'http').read_text();self.assertIn('http://[fd00::1]:8080/',args);self.assertNotIn('--resolve',args)
+
     def test_public_upstream_stops_before_http_request(self):
         (self.root/'public').touch()
         r=self.invoke(PROXY_HOST='100.90.91.104',PROXY_UPSTREAM_URL='http://gateway.internal/',PROXY_GATEWAY_HOST='api.internal')
