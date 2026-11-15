@@ -15,4 +15,4 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash infra/k3s/scripts/verify.sh \
 
 노드 Ready 실패는 `kubectl describe node`, DNS 실패는 CoreDNS Pod/Service, HTTP 실패는 CNI/network policy/방화벽을 확인합니다. context/server/노드 불일치에서는 Pod 생성 전 중단합니다. 단일 노드·local-path 저장소는 노드나 디스크 장애를 견디는 HA가 아닙니다. snapshot schedule·백업·복원 리허설은 추가하지 않습니다.
 
-실제 운영 노드의 설치·Ready/DNS/통신은 이번 코드 변경에서 수행하지 않았습니다. 기존 RustFS 관리 호스트를 k3s 노드로 간주하지 않습니다. 운영자가 확인한 역할·hostname·SSH trust와 허용 정책에 따라 별도 운영 적용을 진행합니다.
+2026-11-15 제공된 VM `system-design-study`를 prod 단일 server 노드로 지정하고 Terraform remote-exec로 설치했습니다. `v1.35.10+k3s1`의 Ready, 기본 `local-path`, Kubernetes Service DNS와 같은 노드의 Pod HTTP 통신을 확인하고 검증용 namespace를 제거했습니다. 노드 간 통신은 단일 노드라 검증하지 않았습니다. [실제 설치·확인 명령과 raw 결과](https://github.com/naive-first/more-naive/pull/49#issuecomment-6894253308)를 참조합니다. 기존 RustFS Docker와 bootstrap local state는 같은 VM의 k3s 밖에서 유지합니다.

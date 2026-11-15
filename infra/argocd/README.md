@@ -17,9 +17,9 @@ MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terrag
 
 공개 저장소는 인증 없이 사용합니다. private 저장소의 read-only `ARGO_REPO_TOKEN`은 `ARGO_REPO_USERNAME`과 함께 기존 repository Secret stdin 주입 경로로만 사용합니다. values·plan·state·argv·로그에는 넣지 않고 kubectl/Helm 자식 환경에서도 제거합니다. `env.prod` 전체나 admin 초기 비밀번호는 출력하지 않습니다.
 
-server Service는 ClusterIP이며 ingress/공인 포트를 생성하지 않습니다. default RBAC는 권한을 부여하지 않고 exec·Dex·알림·ApplicationSet은 비활성화합니다. 반복 workload 배포는 main의 root/child 자동 sync가 담당합니다. 실패하면 context/API→노드 Ready→Helm release→repo-server 읽기→Application 상태를 확인합니다. Secret/kubeconfig 전체 출력은 공유하지 않습니다.
+server Service는 ClusterIP이며 ingress/공인 포트를 생성하지 않습니다. default RBAC는 권한을 부여하지 않고 exec·Dex·알림은 비활성화합니다. ApplicationSet 리소스는 사용하지 않지만 chart 10.18.0에서 ApplicationSet controller도 실행 중입니다. 반복 workload 배포는 main의 root/child 자동 sync가 담당합니다. 실패하면 context/API→노드 Ready→Helm release→repo-server 읽기→Application 상태를 확인합니다. Secret/kubeconfig 전체 출력은 공유하지 않습니다.
 
-실제 prod 설치·repo 읽기·자동 sync는 이 로컬 검증에서 수행하지 않습니다. 삭제는 제어 중단과 Application/PVC 영향을 먼저 검토하며 자동 uninstall·PVC 삭제·백업/복원은 범위 밖입니다. [선언형 구성](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/)과 [자동 sync 정책](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)을 따릅니다.
+2026-11-15 실제 prod에 native Terraform Helm provider로 설치했습니다. 고정 chart/app 버전, controller Ready와 공개 저장소 읽기를 확인했고 `more-naive-prod`, `more-naive-projects`, `postgres`가 Synced/Healthy입니다. [실제 init·plan·apply와 확인 raw](https://github.com/naive-first/more-naive/pull/52#issuecomment-6894360960)를 참조합니다. 운영 API는 검증한 SSH 연결의 loopback 터널 `https://127.0.0.1:16443`으로 접근하며 kubeconfig의 CA·클라이언트 인증을 유지합니다. 삭제는 제어 중단과 Application/PVC 영향을 먼저 검토하며 자동 uninstall·PVC 삭제·백업/복원은 범위 밖입니다. [선언형 구성](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/)과 [자동 sync 정책](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)을 따릅니다.
 
 ## 프로젝트별 허용 범위
 
