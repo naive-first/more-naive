@@ -8,6 +8,13 @@ terraform {
     commands = ["init", "plan", "apply", "destroy", "output", "validate"]
     execute  = ["sh", "${get_terragrunt_dir()}/preflight.sh", get_repo_root(), get_terraform_command()]
   }
+  extra_arguments "administrator" {
+    commands = get_terraform_commands_that_need_vars()
+    env_vars = {
+      TF_VAR_admin_access_key = get_env("RUSTFS_ADMIN_ACCESS_KEY")
+      TF_VAR_admin_secret_key = get_env("RUSTFS_ADMIN_SECRET_KEY")
+    }
+  }
 }
 
 remote_state {

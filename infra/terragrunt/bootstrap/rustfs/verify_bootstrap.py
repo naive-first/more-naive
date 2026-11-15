@@ -5,7 +5,6 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -17,12 +16,11 @@ from botocore.config import Config
 IMAGE = "rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74"
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
-LOADER = ROOT / "scripts/env.py"
-BOOTSTRAP = [sys.executable, str(LOADER), "--env", "prod", "rustfs-bootstrap", "--", "terragrunt", "--working-dir", str(HERE), "run", "--"]
+BOOTSTRAP = ["terragrunt", "--working-dir", str(HERE), "run", "--"]
 
 
 def command(argv, env=None):
-    result = subprocess.run(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    result = subprocess.run(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, umask=0o077)
     if result.returncode:
         print(result.stdout)
         raise RuntimeError(f"command failed: {argv[0]} (exit {result.returncode})")
@@ -55,7 +53,7 @@ def main():
         name = "more-naive-verify-" + secrets.token_hex(5)
         endpoint = f"http://127.0.0.1:{port}"
         env = os.environ.copy()
-        env.update({"RUSTFS_DATA_DIR": str(data), "RUSTFS_STATE_PATH": str(state / "bootstrap.tfstate"),
+        env.update({"MORE_NAIVE_ENV": "prod", "RUSTFS_DATA_DIR": str(data), "RUSTFS_STATE_PATH": str(state / "bootstrap.tfstate"),
                     "RUSTFS_ENDPOINT": endpoint, "RUSTFS_NAME": name,
                     "RUSTFS_ADMIN_ACCESS_KEY": secrets.token_hex(10),
                     "RUSTFS_ADMIN_SECRET_KEY": secrets.token_hex(24),
@@ -87,8 +85,8 @@ def main():
             assert (state / "bootstrap.tfstate").is_file()
             assert (state / "bootstrap.tfstate").stat().st_mode & 0o777 == 0o600
             print("PASS 3: a fresh cache reads the same absolute local state")
-            denied = subprocess.run([sys.executable, str(LOADER), "--env", "dev", "rustfs-bootstrap", "--", "terragrunt", "apply"],
-                                    env=env, capture_output=True, text=True)
+            denied = subprocess.run([*BOOTSTRAP, "apply", "-input=false", "-auto-approve"],
+                                    env={**env, "MORE_NAIVE_ENV": "dev"}, capture_output=True, text=True)
             assert denied.returncode != 0
             print("PASS 4: dev is refused before a write")
         finally:
