@@ -4,7 +4,7 @@ metadata:
   name: more-naive-prod
   namespace: argocd
 spec:
-  project: default
+  project: more-naive-bootstrap
   source:
     repoURL: https://github.com/naive-first/more-naive.git
     targetRevision: main

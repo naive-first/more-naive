@@ -55,12 +55,26 @@ esac
         self.assertTrue(self.calls()[-1].startswith('helm template'))
         self.assertFalse(any(' apply ' in call for call in self.calls()))
 
+    def test_crd_failure_stops_control_plane_and_root_registration(self):
+        declarations=self.root/'infra/argocd/applications/prod';declarations.mkdir(parents=True)
+        for name in ['istio-base','istiod']:(declarations/f'{name}.yaml').write_text('fixture')
+        (self.root/'fail-crd').touch()
+        result=self.invoke(True);self.assertNotEqual(result.returncode,0)
+        calls='\n'.join(self.calls())
+        self.assertIn('istio-base.yaml',calls)
+        self.assertNotIn('istiod.yaml',calls);self.assertNotIn('/root.yaml',calls)
+
     def test_apply_registers_after_rollout_without_helm_install(self):
+        declarations=self.root/'infra/argocd/applications/prod';declarations.mkdir(parents=True)
+        for name in ['istio-base','istiod','istio-gateway','postgres','backend']:(declarations/f'{name}.yaml').write_text('fixture')
         result=self.invoke(True);self.assertEqual(result.returncode,0,result.stderr)
         calls=self.calls();self.assertFalse(any('helm upgrade' in call for call in calls))
         rollout=next(i for i,call in enumerate(calls) if 'rollout status' in call)
         root=next(i for i,call in enumerate(calls) if call.endswith('/root.yaml'))
         self.assertLess(rollout,root)
+        positions=[next(i for i,c in enumerate(calls) if c.endswith('/'+name+'.yaml')) for name in ['istio-base','istiod','istio-gateway','postgres','backend']]
+        self.assertEqual(positions,sorted(positions));self.assertLess(positions[-1],root)
+        self.assertTrue(any('statefulset/postgres --timeout=300s' in c for c in calls))
 
     def test_repository_secret_uses_stdin_and_filtered_child_environment(self):
         result=self.invoke(True,ARGO_REPO_TOKEN='private-repo-fixture',RUSTFS_STATE_SECRET_KEY='private-state-fixture')

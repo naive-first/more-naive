@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: more-naive-backend
+  namespace: argocd
+spec:
+  sourceRepos:
+  - https://github.com/naive-first/more-naive.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: more-naive-prod
+  namespaceResourceWhitelist:
+  - group: apps
+    kind: Deployment
+  - group: ''
+    kind: Service
+  - group: networking.istio.io
+    kind: VirtualService
+  clusterResourceWhitelist: []
