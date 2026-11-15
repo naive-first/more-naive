@@ -10,11 +10,12 @@ from urllib.parse import urlsplit
 
 from botocore.exceptions import ClientError
 
-from verify_bootstrap import LOADER, IMAGE, command, wait_health
+from verify_bootstrap import IMAGE, command, wait_health
 from verify_state import ROOT, main
 
 
 def check_lock(unit, second, env, name, client, state):
+    env["RUSTFS_CREDENTIALS_FILE"] = str(unit.parents[1] / "RUSTFS_STATE.credentials")
     bucket = env["RUSTFS_BUCKET"]
     key = "more-naive/prod/verify/terraform.tfstate.tflock"
     client.put_object(Bucket=bucket, Key=key, Body=b"conditional-write-probe", IfNoneMatch="*")
@@ -33,8 +34,8 @@ def check_lock(unit, second, env, name, client, state):
     for directory in [unit, second]:
         with (directory / "main.tf").open("a") as output:
             output.write(extra)
-    args = [sys.executable, str(LOADER), "--env", "prod", "rustfs-state", "--", "terragrunt", "run", "--", "apply", "-input=false", "-auto-approve"]
-    first = subprocess.Popen(args, env=env, cwd=unit, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    args = ["terragrunt", "run", "--", "apply", "-input=false", "-auto-approve"]
+    first = subprocess.Popen(args, env=env, cwd=unit, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, umask=0o077)
     try:
         for _ in range(100):
             if marker.exists():
@@ -66,7 +67,7 @@ def check_lock(unit, second, env, name, client, state):
     assert not local_states, "a local fallback resource state unexpectedly appeared"
     print("PASS 10: offline RustFS fails instead of creating local state")
     command(["docker", "rm", name])
-    scratch = unit.parent
+    scratch = unit.parents[1]
     port = urlsplit(env["RUSTFS_ENDPOINT"]).port
     command(["docker", "run", "-d", "--name", name, "--env-file", str(scratch / "docker.env"),
              "-v", f"{scratch / 'data'}:/data", "-p", f"127.0.0.1:{port}:9000", IMAGE, "/data"])

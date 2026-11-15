@@ -66,4 +66,4 @@ uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_loc
 
 머지 후 인프라 관리자가 #8의 prod apply 전에 동일 고정 버전에서 격리 검증을 실행하고 결과를 확인합니다. 운영 state에 대한 중지/삭제 실험은 수행하지 않습니다.
 
-이 검증은 공통 env loader와 native Terragrunt run으로 실제 Terraform CLI를 실행합니다. Python은 임시 Docker·IAM·S3 fixture, 잠금 보유 marker와 assertion을 담당합니다.
+이 검증은 표준 direnv와 native Terragrunt run으로 실제 Terraform CLI를 실행합니다. Python은 임시 Docker·IAM·S3 fixture, 잠금 보유 marker와 assertion을 담당합니다.
