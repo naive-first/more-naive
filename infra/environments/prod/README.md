@@ -1,6 +1,6 @@
 # prod PostgreSQL
 
-prod namespace `more-naive-prod`에 PostgreSQL 한 개를 배포하는 선언입니다. 실제 prod 접속 정보가 준비되지 않아 현재 결과는 Helm 렌더링과 Application 참조 검증까지이며 Ready·DB 접속·Pod 재시작 데이터 보존은 미검증입니다.
+prod namespace `more-naive-prod`에 PostgreSQL 한 개를 배포하는 선언입니다. 2026-11-15 실제 prod에서 Argo Application `Synced/Healthy`, `postgres-0` 1/1 Running, 5Gi PVC Bound를 확인했습니다. Service DNS를 통한 비밀번호 인증 SQL에서 DB/사용자 `more_naive`, 서버 17.12와 `SELECT 1` 성공을 확인했습니다. [실제 배포·확인 명령과 raw 결과](https://github.com/naive-first/more-naive/pull/48#issuecomment-6894361467)를 참조합니다. DB Pod 재시작 후 데이터 보존과 backend migration/readiness는 아직 검증하지 않았습니다.
 
 Argo CD 3.6.1의 `more-naive-db` 프로젝트와 자기 저장소만 사용합니다. [여러 source의 values 참조](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/)로 `platform.yaml` → `postgres.yaml`을 적용하며 release/Service 이름은 `postgres`입니다. `main` merge 후 [자동 sync/self-heal](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)를 사용하고 prune은 비활성입니다. Application이 namespace를 생성하지 않으며 prod bootstrap이 namespace와 Argo 프로젝트를 준비해야 합니다.
 
