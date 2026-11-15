@@ -6,7 +6,7 @@
 
 | 대상 | 실행 주체와 관리 방식 |
 | --- | --- |
-| 인프라 | 운영자 호스트의 Terragrunt가 Terraform CLI를 실행합니다. terraform-exec 라이브러리는 사용하지 않습니다. |
+| 인프라 | 운영자 호스트에서 Terraform CLI와 Terragrunt를 직접 실행합니다. provider로 자원을 관리하며 필요한 설치 명령만 provisioner로 실행합니다. |
 | RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 실제 관리 호스트는 운영자가 #39 적용 전에 확인합니다. |
 | bootstrap state | 관리 호스트의 캐시·checkout 밖 절대 경로에 local backend로 보관합니다. RustFS 자체 state를 자신의 S3 backend로 이전하지 않습니다. |
 | prod state | RustFS 버킷의 `more-naive/prod/<unit>/terraform.tfstate`와 native `.tflock`을 사용합니다. AWS S3/DynamoDB 자원은 만들지 않습니다. |
