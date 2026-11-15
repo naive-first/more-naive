@@ -1,12 +1,12 @@
 # prod 설정 주입
 
-운영자 관리 호스트에서 루트 `env.prod`의 앱/DB 값만 기존 prod namespace에 주입합니다. Python 3.10 이상과 해당 k3s 버전의 kubectl이 필요합니다. kubeconfig에 지정 context와 API 서버가 등록되어 있고 namespace 조회, ConfigMap/Secret 생성·patch·조회 권한이 있어야 합니다.
+운영자 관리 호스트에서 루트 `env.prod`의 앱/DB 값만 기존 prod namespace에 주입합니다. Bash·jq·direnv과 해당 k3s 버전의 kubectl이 필요합니다. kubeconfig에 지정 context와 API 서버가 등록되어 있고 namespace 조회, ConfigMap/Secret 생성·patch·조회 권한이 있어야 합니다.
 
 ```sh
-python3 scripts/inject-config.py --environment prod --context <KUBE_CONTEXT> --namespace more-naive-prod --apply
+MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/inject-config.sh --apply
 ```
 
-`<KUBE_CONTEXT>`는 운영자가 확인한 실제 context 이름으로 바꿉니다. 입력은 [공통 loader](../../../scripts/README.md)의 `cluster-config`를 직접 재사용하며 현재 디렉터리가 아닌 스크립트의 루트 `env.prod`를 읽습니다. 명시한 context·namespace는 `env.prod`와 일치해야 하고, kubeconfig의 해당 context API 서버는 `KUBE_SERVER`와 일치해야 합니다. 환경 생략/dev·필수값 누락·불일치에서는 쓰기 전에 실패합니다. namespace 자체는 먼저 platform bootstrap에서 생성합니다.
+[표준 환경 구성](../../../scripts/README.md)이 `env.prod`의 공통 키를 읽습니다. 대상 namespace는 `more-naive-prod`로 제한하며, kubeconfig의 해당 context API 서버는 `KUBE_SERVER`와 일치해야 합니다. 환경 생략/dev·필수값 누락·불일치에서는 쓰기 전에 실패합니다. namespace 자체는 먼저 platform bootstrap에서 생성합니다.
 
 | 루트 입력 | 리소스/key | Pod에서 소비할 값 |
 | --- | --- | --- |
@@ -36,4 +36,4 @@ platform:
 
 Secret/ConfigMap 환경변수 변경은 이미 실행 중인 Pod에 자동 적용되지 않습니다. 일반 앱 설정은 운영자가 영향·순서를 확인해 backend Pod를 재시작하고 readiness와 CRUD를 확인합니다. DB 비밀번호 변경은 DB role의 실제 비밀번호와 Secret을 일치시킨 뒤 backend를 재시작하여 연결을 확인해야 합니다. Secret 갱신이나 PostgreSQL Pod 재시작만으로 기존 DB role 비밀번호가 변경됐다고 판정하지 않습니다. 이 도구는 SQL·Pod 재시작·삭제를 수행하지 않습니다.
 
-검증은 `python3 -m unittest discover -s scripts -p 'test_*.py' -v`입니다. fake kubectl 경계로 키 선택·stdin 전달·대상 검증·재실행·값 억제를 확인하며 실제 prod 주입과 Pod 참조 검증은 별도로 필요합니다. 로컬 `env.prod`/kubeconfig/생성 Secret을 Git·이미지·PR 로그에 넣지 않습니다. `env.prod` 삭제는 이미 주입된 객체를 삭제하지 않으며 Secret/ConfigMap을 별도로 삭제하면 새 Pod가 준비되지 않을 수 있습니다.
+검증은 `python3 -m unittest discover -s scripts -p 'test_*.py' -v`입니다. 실제 Bash/jq와 fake kubectl 경계로 키 선택·stdin 전달·대상 검증·재실행·값 억제를 확인하며 실제 prod 주입과 Pod 참조 검증은 별도로 필요합니다. 로컬 `env.prod`/kubeconfig/생성 Secret을 Git·이미지·PR 로그에 넣지 않습니다. `env.prod` 삭제는 이미 주입된 객체를 삭제하지 않으며 Secret/ConfigMap을 별도로 삭제하면 새 Pod가 준비되지 않을 수 있습니다.

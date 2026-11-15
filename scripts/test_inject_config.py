@@ -16,8 +16,9 @@ root=pathlib.Path(os.environ['HOME']); args=sys.argv[1:]
 with (root/'calls.jsonl').open('a') as log: log.write(json.dumps(args)+'\\n')
 if (root/'fail').exists():
  print('fixture-password-must-not-leak',file=sys.stderr);sys.exit(1)
+if '--context' in args and args[args.index('--context')+1]!='fixture-prod': sys.exit(1)
 if 'config' in args:
- print(json.dumps({'clusters':[{'cluster':{'server':(root/'server').read_text()}}]}));sys.exit()
+ print((root/'server').read_text());sys.exit()
 if 'namespace' in args:
  print(json.dumps({'metadata':{'name':'more-naive-prod'}}));sys.exit()
 if 'apply' in args:
@@ -37,9 +38,12 @@ class InjectConfigTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for name in ("env.py", "inject-config.py"):
+        for name in ("check-cluster.sh", "inject-config.sh", "prod-config.jq"):
             source = Path(__file__).with_name(name)
             shutil.copyfile(source, scripts / name)
+        config = self.root / "config/env"
+        config.mkdir(parents=True)
+        shutil.copyfile(Path(__file__).resolve().parents[1] / "config/env/.envrc", config / ".envrc")
         binary = self.root / "bin"
         binary.mkdir()
         kubectl = binary / "kubectl"
@@ -55,25 +59,19 @@ class InjectConfigTest(unittest.TestCase):
         )
         self.environment = {
             "HOME": str(self.root),
+            "XDG_CONFIG_HOME": str(self.root / "xdg"),
+            "MORE_NAIVE_ENV": "prod",
             "PATH": str(binary) + os.pathsep + os.environ["PATH"],
         }
+
+        subprocess.run(["direnv", "allow", str(config)], env=self.environment, capture_output=True, check=True)
 
     def run_command(
         self, extra: list[str] | None = None
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [
-                sys.executable,
-                str(self.root / "scripts/inject-config.py"),
-                "--environment",
-                "prod",
-                "--context",
-                "fixture-prod",
-                "--namespace",
-                "more-naive-prod",
-                "--apply",
-                *(extra or []),
-            ],
+            ["direnv", "exec", str(self.root / "config/env"), "bash",
+             str(self.root / "scripts/inject-config.sh"), "--apply", *(extra or [])],
             cwd=self.root,
             env=self.environment,
             capture_output=True,
@@ -140,17 +138,21 @@ class InjectConfigTest(unittest.TestCase):
         )
 
     def test_wrong_environment_refuses_before_kubectl(self) -> None:
-        result = self.run_command(["--environment", "dev"])
+        (self.root / "env.dev").write_text(self.dotenv.read_text())
+        self.environment["MORE_NAIVE_ENV"] = "dev"
+        result = self.run_command()
         self.assertEqual(result.returncode, 2)
         self.assertEqual(self.calls(), [])
 
     def test_wrong_context_refuses_before_kubectl(self) -> None:
-        result = self.run_command(["--context", "wrong"])
+        self.dotenv.write_text(self.dotenv.read_text().replace("KUBE_CONTEXT=fixture-prod", "KUBE_CONTEXT=wrong"))
+        result = self.run_command()
         self.assertEqual(result.returncode, 2)
-        self.assertEqual(self.calls(), [])
+        self.assertFalse(any("apply" in call for call in self.calls()))
 
     def test_wrong_namespace_refuses_before_kubectl(self) -> None:
-        result = self.run_command(["--namespace", "other"])
+        self.dotenv.write_text(self.dotenv.read_text().replace("NAMESPACE=more-naive-prod", "NAMESPACE=other"))
+        result = self.run_command()
         self.assertEqual(result.returncode, 2)
         self.assertEqual(self.calls(), [])
 
@@ -186,19 +188,8 @@ class InjectConfigTest(unittest.TestCase):
 
     def test_missing_apply_opt_in_stops_before_kubectl(self) -> None:
         result = subprocess.run(
-            [
-                sys.executable,
-                str(self.root / "scripts/inject-config.py"),
-                "--environment",
-                "prod",
-                "--context",
-                "fixture-prod",
-                "--namespace",
-                "more-naive-prod",
-            ],
-            env=self.environment,
-            capture_output=True,
-            text=True,
+            ["direnv", "exec", str(self.root / "config/env"), "bash", str(self.root / "scripts/inject-config.sh")],
+            cwd=self.root, env=self.environment, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 2)
         self.assertEqual(self.calls(), [])
