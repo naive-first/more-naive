@@ -13,5 +13,7 @@ fi
 export SSH_EXPECTED_HOST=$K3S_NODE_NAME
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
 source "$root/scripts/check-ssh.sh"
-"${SSH_COMMAND[@]}" 'sudo -n true && tailscale status --json' | jq -e '.BackendState == "Running"' >/dev/null
-echo 'prod node identity, sudo and Tailscale Running verified; no installation performed'
+tailscale status --json | jq -e '.BackendState == "Running"' >/dev/null
+tailscale ping --c=1 --timeout=10s --until-direct=false "$SSH_HOST" >/dev/null
+"${SSH_COMMAND[@]}" 'sudo -n true'
+echo 'prod node identity, sudo and operator tailnet reachability verified; no installation performed'
