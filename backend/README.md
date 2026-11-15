@@ -7,9 +7,9 @@ JDK 21·Gradle 8.14.3·Kotlin 2.2.21·Spring Boot 3.5.16으로 실행하는 최�
 저장소 루트에서 루트 `env.example`을 참고해 실제 `env.dev`를 준비하고 권한을 600으로 제한합니다. 필요한 키는 `DB_DATABASE`·`DB_USERNAME`·`DB_PASSWORD`·`DB_PORT`·`DB_URL`입니다. URL은 Compose의 호스트 포트와 일치하는 `jdbc:postgresql://127.0.0.1:포트/DB이름`입니다. 포트는 8080이며 종료 신호를 받으면 최대 20초 동안 진행 중인 요청을 마무리합니다.
 
 ```sh
-python3 scripts/env.py --env dev compose -- docker compose --env-file /dev/null -f backend/compose.yaml up -d --wait
-python3 scripts/env.py --env dev app -- backend/gradlew -p backend test bootJar
-python3 scripts/env.py --env dev app -- java -jar backend/build/libs/app.jar
+MORE_NAIVE_ENV=dev direnv exec config/env docker compose --env-file /dev/null -f backend/compose.yaml up -d --wait
+MORE_NAIVE_ENV=dev direnv exec config/env backend/gradlew -p backend test bootJar
+MORE_NAIVE_ENV=dev direnv exec config/env java -jar backend/build/libs/app.jar
 curl --fail http://localhost:8080/actuator/health/liveness
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
@@ -18,19 +18,19 @@ curl --fail http://localhost:8080/actuator/health/readiness
 
 ```sh
 docker build -t more-naive-backend:local backend
-python3 scripts/env.py --env dev app -- docker run --rm --network host --name more-naive-backend-local -e DB_URL -e DB_USERNAME -e DB_PASSWORD more-naive-backend:local
+MORE_NAIVE_ENV=dev direnv exec config/env docker run --rm --network host --name more-naive-backend-local -e DB_URL -e DB_USERNAME -e DB_PASSWORD more-naive-backend:local
 docker stop --time 25 more-naive-backend-local
 ```
 
 이미지는 고정 digest의 Temurin JRE 21 위에 같은 `app.jar`만 복사하고 UID/GID 10001로 실행합니다. 위 `--network host` 예시는 Linux 로컬 Docker용이며 loopback DB에 접속합니다. 다른 OS/배포에서는 컨테이너에서 도달하는 DB URL을 명시합니다. build context allowlist는 JAR만 허용하므로 루트 `env.dev`·state·kubeconfig·소스가 이미지에 들어가지 않습니다. `Unable to access jarfile`이면 먼저 `bootJar`를 실행합니다. 포트 충돌이면 기존 서비스를 정지시키지 말고 실행 포트를 바꿉니다. 컨테이너 재생성은 앱 프로세스만 교체합니다.
 
-local 실행은 #41의 `python3 scripts/env.py --env dev app -- backend/gradlew -p backend bootRun`도 사용할 수 있습니다. Spring이 루트 `env.dev`를 자동으로 읽는다고 가정하지 않으며, CI는 격리된 PostgreSQL의 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD`를 직접 주입하고 `backend/gradlew -p backend test bootJar`를 실행합니다. prod는 Secret/ConfigMap에서 같은 세 키를 주입하며 누락 시 local 값으로 대체하지 않습니다. dev 클러스터 배포는 만들지 않습니다.
+local 실행은 #41의 `MORE_NAIVE_ENV=dev direnv exec config/env backend/gradlew -p backend bootRun`도 사용할 수 있습니다. Spring이 루트 `env.dev`를 자동으로 읽는다고 가정하지 않으며, CI는 격리된 PostgreSQL의 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD`를 직접 주입하고 `backend/gradlew -p backend test bootJar`를 실행합니다. prod는 Secret/ConfigMap에서 같은 세 키를 주입하며 누락 시 local 값으로 대체하지 않습니다. dev 클러스터 배포는 만들지 않습니다.
 
 ## PostgreSQL와 migration
 
 앱 시작 시 Boot 3.5.16 BOM이 고정한 Flyway가 `db/migration/V1__create_test.sql`을 적용하고 Hibernate는 `ddl-auto=validate`로 확인만 합니다. [단일 migration 도구 사용 지침](https://docs.spring.io/spring-boot/3.5/how-to/data-initialization.html#howto.data-initialization.migration-tool)을 따르며 자동 schema update와 시작 시 초기 데이터 삽입은 하지 않습니다. `test.id`는 자동 생성 bigint, `test.value`는 NOT NULL text입니다. migration 재실행은 이력을 읽어 적용 완료한 V1을 반복하지 않습니다.
 
-잘못된 인증·schema 불일치·migration 실패는 시작 실패로 확인합니다. 원인을 고친 뒤 다시 실행하며 적용한 SQL 파일을 수정하거나 `clean`으로 지우지 않습니다. 로컬 중지는 `python3 scripts/env.py --env dev compose -- docker compose --env-file /dev/null -f backend/compose.yaml down`이며 named volume 데이터는 남습니다. `down -v`는 로컬 DB 전체를 삭제하므로 일반 정리 명령으로 사용하지 않습니다. 테스트는 격리된 DB에서 트랜잭션 rollback 또는 직접 만든 행만 정리합니다. 백업·복원은 이번 범위에 추가하지 않습니다.
+잘못된 인증·schema 불일치·migration 실패는 시작 실패로 확인합니다. 원인을 고친 뒤 다시 실행하며 적용한 SQL 파일을 수정하거나 `clean`으로 지우지 않습니다. 로컬 중지는 `MORE_NAIVE_ENV=dev direnv exec config/env docker compose --env-file /dev/null -f backend/compose.yaml down`이며 named volume 데이터는 남습니다. `down -v`는 로컬 DB 전체를 삭제하므로 일반 정리 명령으로 사용하지 않습니다. 테스트는 격리된 DB에서 트랜잭션 rollback 또는 직접 만든 행만 정리합니다. 백업·복원은 이번 범위에 추가하지 않습니다.
 
 ## Wrapper 확인
 
