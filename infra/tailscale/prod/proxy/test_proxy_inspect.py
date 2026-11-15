@@ -1,84 +1,82 @@
 import json
-import io
+import os
 from pathlib import Path
-import socket
-import tempfile
-from types import SimpleNamespace
-import unittest
-from unittest.mock import patch
-from contextlib import redirect_stdout
 import subprocess
-
-from inspect_proxy import inspect, REMOTE
+import tempfile
+import unittest
 
 
 class ProxyGuards(unittest.TestCase):
-    def args(self, key, **changes):
-        return SimpleNamespace(**{**dict(environment="prod", host="vm.tailnet.ts.net", user="study", key_file=str(key),
-                                         expected_host="confirmed-proxy", upstream_url="", gateway_host=""), **changes})
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name);binary=self.root/'bin';binary.mkdir()
+        self.script=Path(__file__).with_name('inspect_proxy.sh').resolve()
+        key=self.root/'key';key.write_text('not a private key');key.chmod(0o600)
+        self.env={'PATH':str(binary)+':'+os.environ['PATH'],'FIXTURE_ROOT':str(self.root),'MORE_NAIVE_ENV':'prod',
+                  'PROXY_HOST':'vm.ts.net','PROXY_USER':'study','PROXY_EXPECTED_HOST':'confirmed-proxy','PROXY_KEY_FILE':str(key)}
+        commands={
+          'ssh':r'''#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$FIXTURE_ROOT/calls"
+if [[ ${!#} == 'id -un; hostname' ]]; then printf 'study\nconfirmed-proxy\n'; else bash -c "${!#}"; fi
+''',
+          'dig':r'''#!/usr/bin/env bash
+[[ $* == *'AAAA '* ]] && exit 0
+if [[ ${!#} == vm.ts.net ]]; then ip=100.90.91.104; else ip=10.0.0.2; fi
+[[ ! -f $FIXTURE_ROOT/public ]] || ip=8.8.8.8
+printf 'fixture 0 IN A %s\n' "$ip"
+''',
+          'tailscale':r'''#!/usr/bin/env bash
+if [[ $1 == serve ]]; then
+ echo '{"TCP":{"443":{}},"Web":{"proxy.ts.net:443":{"Handlers":{"/":{"Proxy":"http://user:fixture-secret@localhost"}}}}}'
+else echo '{"BackendState":"Running","Self":{"DNSName":"proxy.ts.net","TailscaleIPs":["100.90.91.104"]},"Peer":{"other":"fixture-peer-private"}}'; fi
+''',
+          'sudo':'#!/bin/bash\nexit 0\n',
+          'hostname':'#!/bin/bash\necho confirmed-proxy\n',
+          'id':'#!/bin/bash\necho study\n',
+          'curl':r'''#!/usr/bin/env bash
+printf '%s\n' "$*" > "$FIXTURE_ROOT/http"
+echo -n 503
+'''}
+        for name,body in commands.items():
+            path=binary/name;path.write_text(body);path.chmod(0o700)
 
-    def key(self, directory):
-        key = Path(directory) / "fixture-key"
-        key.write_text("fixture, not an SSH private key")
-        key.chmod(0o600)
-        return key
+    def invoke(self,**changes):
+        return subprocess.run(['bash',str(self.script)],env={**self.env,**changes},text=True,capture_output=True)
 
-    @patch("inspect_proxy.subprocess.check_output")
-    def test_dev_and_missing_key_never_contact_ssh(self, call):
-        for args in [self.args("missing", environment="dev"), self.args("missing")]:
-            with self.assertRaises(ValueError):
-                inspect(args)
-        call.assert_not_called()
+    def test_dev_and_missing_key_never_contact_ssh(self):
+        for c in [{'MORE_NAIVE_ENV':'dev'},{'PROXY_KEY_FILE':'missing'}]:self.assertNotEqual(self.invoke(**c).returncode,0)
+        self.assertFalse((self.root/'calls').exists())
 
-    @patch("inspect_proxy.socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 22))])
-    @patch("inspect_proxy.subprocess.check_output")
-    def test_public_ssh_address_rejected(self, call, resolve):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaises(ValueError):
-                inspect(self.args(self.key(directory)))
-        call.assert_not_called()
+    def test_public_ssh_address_rejected(self):
+        (self.root/'public').touch();self.assertNotEqual(self.invoke().returncode,0)
+        self.assertFalse((self.root/'calls').exists())
 
-    @patch("inspect_proxy.socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.90.91.104", 22))])
-    @patch("inspect_proxy.subprocess.check_output")
-    def test_query_or_credentials_in_upstream_rejected(self, call, resolve):
-        with tempfile.TemporaryDirectory() as directory:
-            key = self.key(directory)
-            for url in ["http://name:secret@10.0.0.1/", "http://10.0.0.1/?token=secret"]:
-                with self.assertRaises(ValueError):
-                    inspect(self.args(key, upstream_url=url, gateway_host="api.internal"))
-        call.assert_not_called()
+    def test_query_or_credentials_in_upstream_rejected(self):
+        for url in ['http://name:secret@10.0.0.1/','http://10.0.0.1/?token=secret']:
+            self.assertNotEqual(self.invoke(PROXY_UPSTREAM_URL=url,PROXY_GATEWAY_HOST='api.internal').returncode,0)
+        self.assertFalse((self.root/'calls').exists())
 
-    @patch("inspect_proxy.socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.90.91.104", 22))])
-    @patch("inspect_proxy.subprocess.check_output", return_value='{"hostname":"confirmed-proxy"}')
-    def test_remote_command_keeps_hostkey_checks_and_contains_no_mutation(self, call, resolve):
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertIn("confirmed-proxy", inspect(self.args(self.key(directory))))
-        command = call.call_args.args[0]
-        self.assertIn("StrictHostKeyChecking=yes", command)
-        self.assertIn("BatchMode=yes", command)
-        self.assertIn("confirmed-proxy", json.loads(call.call_args.kwargs["input"]).values())
-        self.assertNotIn("serve reset", command[-1])
-        self.assertNotIn("funnel", command[-1])
+    def test_remote_command_keeps_hostkey_checks_and_contains_no_mutation(self):
+        r=self.invoke();self.assertEqual(r.returncode,0,r.stderr)
+        calls=(self.root/'calls').read_text();self.assertIn('StrictHostKeyChecking=yes',calls);self.assertIn('BatchMode=yes',calls)
+        self.assertNotIn('serve reset',calls);self.assertNotIn('funnel',calls)
 
     def test_remote_summary_excludes_peers_and_proxy_credentials(self):
-        def read(command, **kwargs):
-            if "sudo" in command:
-                return subprocess.CompletedProcess(command, 0)
-            body = ({"BackendState": "Running", "Self": {"DNSName": "proxy.ts.net", "TailscaleIPs": ["100.90.91.104"]},
-                     "Peer": {"other": "fixture-peer-private"}} if "status" in command and "serve" not in command else
-                    {"TCP": {"443": {}}, "Web": {"proxy.ts.net:443": {"Handlers": {"/": {"Proxy": "http://user:fixture-secret@localhost"}}}}})
-            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(body))
-        payload = io.StringIO(json.dumps({"expected_host": "proxy", "user": "study", "upstream": "", "gateway_host": ""}))
-        output = io.StringIO()
-        with patch("sys.stdin", payload), patch("socket.gethostname", return_value="proxy"), \
-             patch("pwd.getpwuid", return_value=SimpleNamespace(pw_name="study")), \
-             patch("subprocess.run", side_effect=read), redirect_stdout(output):
-            exec(compile(REMOTE, "proxy-remote", "exec"), {})
-        summary = json.loads(output.getvalue())
-        self.assertEqual(summary["serve_tcp_ports"], ["443"])
-        self.assertNotIn("fixture-peer-private", output.getvalue())
-        self.assertNotIn("fixture-secret", output.getvalue())
+        r=self.invoke();self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(json.loads(r.stdout)['serve_tcp_ports'],['443'])
+        self.assertNotIn('fixture-peer-private',r.stdout);self.assertNotIn('fixture-secret',r.stdout)
+
+    def test_private_upstream_is_pinned_and_reports_status_without_redirects(self):
+        r=self.invoke(PROXY_UPSTREAM_URL='http://gateway.internal:8080/',PROXY_GATEWAY_HOST='api.internal')
+        self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(json.loads(r.stdout)['upstream_status'],'503')
+        args=(self.root/'http').read_text();self.assertIn('--resolve gateway.internal:8080:10.0.0.2',args)
+        self.assertIn('Host: api.internal',args);self.assertNotIn('--location',args)
+
+    def test_public_upstream_stops_before_http_request(self):
+        (self.root/'public').touch()
+        r=self.invoke(PROXY_HOST='100.90.91.104',PROXY_UPSTREAM_URL='http://gateway.internal/',PROXY_GATEWAY_HOST='api.internal')
+        self.assertNotEqual(r.returncode,0);self.assertFalse((self.root/'http').exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__=='__main__':unittest.main()
