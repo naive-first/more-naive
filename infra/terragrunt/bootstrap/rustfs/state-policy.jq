@@ -1,4 +1,5 @@
-env.RUSTFS_BUCKET as $bucket |
+(env.RUSTFS_BUCKET | if type == "string" and test("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+ then . else error("RUSTFS_BUCKET required") end) as $bucket |
 "arn:aws:s3:::" + $bucket as $root |
 {
   Version: "2012-10-17",
