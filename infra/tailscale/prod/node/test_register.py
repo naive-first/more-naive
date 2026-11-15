@@ -1,113 +1,89 @@
 import json
-import hashlib
-import io
+import os
 from pathlib import Path
-from types import SimpleNamespace
+import shutil
+import subprocess
+import tempfile
 import unittest
-import tarfile
-from unittest.mock import patch
-
-from register import register
 
 
 class RegistrationGuards(unittest.TestCase):
-    def args(self, **changes):
-        return SimpleNamespace(**{**dict(environment="prod", expected_host="prod-node", node_name="prod-node",
-                                         os_user="study", tag=[], apply=False, policy_reviewed=False), **changes})
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name);self.bin=self.root/'bin';self.bin.mkdir()
+        self.script=Path(__file__).with_name('register.sh').resolve()
+        for name in ['bash','hostname','id','uname','jq','mktemp','rm']:
+            (self.bin/name).symlink_to(shutil.which(name))
+        self.env={'PATH':str(self.bin),'HOME':str(self.root),'FIXTURE_ROOT':str(self.root),'MORE_NAIVE_ENV':'prod',
+                  'TAILSCALE_EXPECTED_HOST':subprocess.check_output(['hostname'],text=True).strip(),
+                  'TAILSCALE_NODE_NAME':'prod-node','SSH_USER':subprocess.check_output(['id','-un'],text=True).strip()}
+        (self.root/'status').write_text('{"BackendState":"NeedsLogin"}')
 
-    @patch("register.socket.gethostname", return_value="prod-node")
-    @patch("register.subprocess.check_output")
-    def test_environment_and_host_guard(self, call, hostname):
-        for args in [self.args(environment="dev"), self.args(expected_host="other")]:
-            with self.assertRaises(ValueError):
-                register(args)
-        call.assert_not_called()
+    def binary(self):
+        tool=self.bin/'tailscale';tool.write_text('''#!/usr/bin/env bash
+set -eu
+printf '%s\\n' "$*" >> "$FIXTURE_ROOT/calls"
+case $1 in
+ status) /bin/cat "$FIXTURE_ROOT/status";;
+ version) echo 1.104.7;;
+ up)
+   [[ -z ${TAILSCALE_AUTH_KEY-} ]]
+   for arg in "$@"; do
+     if [[ $arg == --auth-key=file:* ]]; then
+       path=${arg#--auth-key=file:}
+       [[ $(/usr/bin/stat -c %a "$path") == 600 ]]
+       [[ $(/usr/bin/stat -c %a "${path%/*}") == 700 ]]
+       [[ $(/bin/cat "$path") == fixture-join-key ]]
+       printf '%s' "$path" > "$FIXTURE_ROOT/key-path"
+     fi
+   done;;
+esac
+''');tool.chmod(0o700)
 
-    @patch("register.socket.gethostname", return_value="prod-node")
-    @patch("register.pwd.getpwnam")
-    @patch("register.shutil.which", return_value="/usr/bin/tailscale")
-    @patch("register.subprocess.check_output")
-    @patch("register.subprocess.run")
-    def test_existing_node_never_rejoins(self, run, status, which, user, hostname):
-        status.return_value = json.dumps({"BackendState": "Running", "Self": {"HostName": "prod-node", "ID": "existing"}})
-        register(self.args(apply=True))
-        run.assert_not_called()
+    def run_script(self,*args,**changes):
+        return subprocess.run(['/bin/bash',str(self.script),*args],env={**self.env,**changes},text=True,capture_output=True)
 
-    @patch("register.socket.gethostname", return_value="prod-node")
-    @patch("register.pwd.getpwnam")
-    @patch("register.shutil.which", return_value="/usr/bin/tailscale")
-    @patch("register.subprocess.check_output")
-    @patch("register.subprocess.run")
-    def test_expired_existing_node_stops(self, run, status, which, user, hostname):
-        status.return_value = json.dumps({"BackendState": "NeedsLogin", "Self": {"ID": "existing"}})
-        with self.assertRaises(ValueError):
-            register(self.args(apply=True, policy_reviewed=True))
-        run.assert_not_called()
+    def test_environment_and_host_guard(self):
+        self.binary()
+        for changes in [{'MORE_NAIVE_ENV':'dev'},{'TAILSCALE_EXPECTED_HOST':'other'}]:
+            self.assertNotEqual(self.run_script(**changes).returncode,0)
+        self.assertFalse((self.root/'calls').exists())
 
-    @patch("register.socket.gethostname", return_value="prod-node")
-    @patch("register.pwd.getpwnam")
-    @patch("register.shutil.which", return_value="/usr/bin/tailscale")
-    @patch("register.subprocess.check_output", return_value='{"BackendState":"NeedsLogin"}')
-    @patch("register.subprocess.run")
-    @patch.dict("register.os.environ", {}, clear=True)
-    def test_missing_auth_key_never_registers(self, run, status, which, user, hostname):
-        with self.assertRaises(ValueError):
-            register(self.args(apply=True, policy_reviewed=True))
-        run.assert_not_called()
+    def test_existing_node_never_rejoins(self):
+        self.binary();(self.root/'status').write_text('{"BackendState":"Running","Self":{"HostName":"prod-node","ID":"existing"}}')
+        r=self.run_script('--apply');self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual((self.root/'calls').read_text().splitlines(),['status --json'])
 
-    @patch("register.socket.gethostname", return_value="prod-node")
-    @patch("register.pwd.getpwnam")
-    @patch("register.shutil.which", return_value=None)
-    @patch("register.urllib.request.urlopen")
-    def test_missing_binary_preflight_never_installs(self, download, which, user, hostname):
-        register(self.args())
-        download.assert_not_called()
+    def test_expired_existing_node_stops(self):
+        self.binary();(self.root/'status').write_text('{"BackendState":"NeedsLogin","Self":{"ID":"existing"}}')
+        r=self.run_script('--apply','--policy-reviewed',TAILSCALE_AUTH_KEY='fixture-join-key')
+        self.assertNotEqual(r.returncode,0);self.assertNotIn('up ',(self.root/'calls').read_text())
+
+    def test_missing_auth_key_never_registers(self):
+        self.binary();r=self.run_script('--apply','--policy-reviewed')
+        self.assertNotEqual(r.returncode,0);self.assertNotIn('up ',(self.root/'calls').read_text())
+
+    def test_missing_binary_preflight_never_installs(self):
+        r=self.run_script();self.assertEqual(r.returncode,0,r.stderr);self.assertIn('NOT_RUN',r.stdout)
 
     def test_join_uses_private_temporary_file_and_removes_it(self):
-        observed = []
-        def submit(command, **kwargs):
-            key_arg = next(value for value in command if value.startswith("--auth-key=file:"))
-            key_file = Path(key_arg.removeprefix("--auth-key=file:"))
-            self.assertEqual(key_file.read_text(), "fixture-join-key")
-            self.assertEqual(key_file.stat().st_mode & 0o777, 0o600)
-            self.assertNotIn("fixture-join-key", " ".join(command))
-            observed.append(key_file)
-        with patch("register.socket.gethostname", return_value="prod-node"), \
-             patch("register.pwd.getpwnam"), patch("register.shutil.which", return_value="tailscale"), \
-             patch("register.subprocess.check_output", side_effect=['{"BackendState":"NeedsLogin"}', "1.104.7\n"]), \
-             patch("register.subprocess.run", side_effect=submit), \
-             patch.dict("register.os.environ", {"TAILSCALE_AUTH_KEY": "fixture-join-key"}, clear=True):
-            register(self.args(apply=True, policy_reviewed=True))
-        self.assertEqual(len(observed), 1)
-        self.assertFalse(observed[0].exists())
+        self.binary();r=self.run_script('--apply','--policy-reviewed',TAILSCALE_AUTH_KEY='fixture-join-key')
+        self.assertEqual(r.returncode,0,r.stderr);path=Path((self.root/'key-path').read_text())
+        self.assertFalse(path.exists());self.assertNotIn('fixture-join-key',(self.root/'calls').read_text()+r.stdout+r.stderr)
 
     def test_existing_managed_service_prevents_download_and_binary_writes(self):
-        archive = io.BytesIO()
-        with tarfile.open(fileobj=archive, mode="w:gz") as tar:
-            for name in ("tailscale", "tailscaled"):
-                info = tarfile.TarInfo(f"tailscale_1.104.7_amd64/{name}")
-                info.size = 7
-                tar.addfile(info, io.BytesIO(b"fixture"))
-        payload = archive.getvalue()
-        with patch("register.socket.gethostname", return_value="prod-node"), \
-             patch("register.pwd.getpwnam"), patch("register.shutil.which", return_value=None), \
-             patch("register.os.geteuid", return_value=0), \
-             patch("register.platform.system", return_value="Linux"), \
-             patch("register.platform.machine", return_value="x86_64"), \
-             patch.dict("register.os.environ", {"TAILSCALE_AUTH_KEY": "fixture"}, clear=True), \
-             patch("register.Path.exists", autospec=True, side_effect=lambda path: str(path) == "/etc/systemd/system/more-naive-tailscaled.service"), \
-             patch("register.CHECKSUM", hashlib.sha256(payload).hexdigest()), \
-             patch("register.urllib.request.urlopen") as download, \
-             patch("register.Path.mkdir") as mkdir, patch("register.Path.write_bytes") as write, \
-             patch("register.Path.chmod"), patch("register.subprocess.run") as command:
-            download.return_value.read.return_value = payload
-            with self.assertRaisesRegex(ValueError, "existing managed service"):
-                register(self.args(apply=True, policy_reviewed=True))
-            download.assert_not_called()
-            mkdir.assert_not_called()
-            write.assert_not_called()
-            command.assert_not_called()
+        r=subprocess.run(['docker','run','--rm','--network','none','--user','0',
+                          '-v',str(self.script.parent)+':/source:ro','--entrypoint','bash','eclipse-temurin:21-jre-jammy','-c',
+                          '''set -eu
+mkdir -p /etc/systemd/system /fixture
+: > /etc/systemd/system/more-naive-tailscaled.service
+export MORE_NAIVE_ENV=prod TAILSCALE_EXPECTED_HOST=$(hostname) TAILSCALE_NODE_NAME=prod-node SSH_USER=root TAILSCALE_AUTH_KEY=fixture
+if bash /source/register.sh --apply --policy-reviewed > /fixture/output 2>&1; then exit 1; fi
+grep -q 'existing managed service' /fixture/output
+test ! -e /usr/local/bin/tailscale
+test ! -e /usr/local/sbin/tailscaled
+'''],text=True,capture_output=True)
+        self.assertEqual(r.returncode,0,r.stderr+r.stdout)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__=='__main__':unittest.main()

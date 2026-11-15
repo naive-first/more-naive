@@ -1,0 +1,11 @@
+[Unit]
+Description=More Naive Tailscale
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/usr/local/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock
+RuntimeDirectory=tailscale
+StateDirectory=tailscale
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
