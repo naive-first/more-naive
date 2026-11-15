@@ -6,7 +6,7 @@
 
 | 대상 | 실행 주체와 관리 방식 |
 | --- | --- |
-| 인프라 | 운영자 호스트의 Terragrunt가 Terraform CLI를 실행합니다. terraform-exec 라이브러리는 사용하지 않습니다. |
+| 인프라 | 운영자 호스트에서 Terraform CLI와 Terragrunt를 직접 실행합니다. provider로 자원을 관리하며 필요한 설치 명령만 provisioner로 실행합니다. |
 | RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 실제 관리 호스트는 운영자가 #39 적용 전에 확인합니다. |
 | bootstrap state | 관리 호스트의 캐시·checkout 밖 절대 경로에 local backend로 보관합니다. RustFS 자체 state를 자신의 S3 backend로 이전하지 않습니다. |
 | prod state | RustFS 버킷의 `more-naive/prod/<unit>/terraform.tfstate`와 native `.tflock`을 사용합니다. AWS S3/DynamoDB 자원은 만들지 않습니다. |
@@ -56,7 +56,7 @@
 
 ## 입력과 접근 경계
 
-루트 `env.dev`와 `env.prod`로 환경을 구분하며 두 파일은 동일한 `DB_*`, `KUBE_*`, `SSH_*` 키를 사용합니다. 공통 템플릿은 `env.example`입니다. `python3 scripts/env.py --env dev|prod <consumer> -- <command>`로 환경과 소비자를 명시하고 필요한 키만 전달합니다. 환경 파일은 shell 코드로 실행하지 않으며 다른 환경 파일로 대체하지 않습니다. dev 선택은 로컬 앱/Compose에만 허용하고 인프라는 prod만 실행합니다. Spring과 Terragrunt가 dotenv를 자동으로 읽는다고 가정하지 않습니다. RustFS 관리자, state 전용 인증, 실제 인프라 provider 인증은 별개입니다.
+루트 `env.dev`와 `env.prod`로 환경을 구분하며 두 파일은 동일한 `DB_*`, `KUBE_*`, `SSH_*` 키를 사용합니다. 공통 템플릿은 `env.example`입니다. `MORE_NAIVE_ENV=dev|prod direnv exec config/env <command>`로 환경을 명시합니다. 검토한 `config/env/.envrc`를 한 번 허용하고 표준 dotenv 문법을 사용하며, 선택한 파일이 없으면 중단합니다. dev 선택은 로컬 앱/Compose에만 허용하고 인프라는 prod만 실행합니다. Spring과 Terragrunt가 dotenv를 자동으로 읽는다고 가정하지 않습니다. RustFS 관리자, state 전용 인증, 실제 인프라 provider 인증은 별개입니다.
 
 비밀값·Terraform state/plan·kubeconfig는 Git·이미지·원본 실행 로그에 포함하지 않습니다. `env.dev`·`env.prod`와 bootstrap local state는 운영자 전용 권한으로 보관합니다. Secret controller·외부 비밀 저장소와 GHCR pull Secret은 도입하지 않습니다.
 
