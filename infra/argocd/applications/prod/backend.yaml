@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend
+  namespace: argocd
+spec:
+  project: more-naive-backend
+  sources:
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    path: infra/charts/spring-app
+    helm:
+      releaseName: backend
+      valueFiles:
+      - $values/infra/environments/prod/platform.yaml
+      - $values/infra/environments/prod/backend.yaml
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: more-naive-prod
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: false
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
