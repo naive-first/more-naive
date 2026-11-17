@@ -1,0 +1,15 @@
+image:
+  repository: postgres
+  tag: 17.12-alpine
+storage:
+  className: local-path
+  size: 5Gi
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
