@@ -14,6 +14,13 @@ class TestRecordService(private val records: TestRecordRepository) {
 
     @Transactional(readOnly = true)
     fun get(id: Long): TestRecord = records.findById(id).orElseThrow { TestRecordNotFoundException() }
+
+    @Transactional
+    fun update(id: Long, value: String): TestRecord {
+        val record = get(id)
+        record.value = value
+        return record
+    }
 }
 
 class TestRecordNotFoundException : RuntimeException()
