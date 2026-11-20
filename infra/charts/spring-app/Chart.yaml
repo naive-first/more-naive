@@ -1,0 +1,6 @@
+apiVersion: v2
+name: spring-app
+description: Spring Boot backend와 선택적 Istio API 경로
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
