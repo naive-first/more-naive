@@ -21,14 +21,14 @@ test job에서 만든 JAR의 checksum을 artifact와 함께 전달하고 publish
 
 승격 도구는 임시 빈 `{"auths":{}}` Docker config로 정확한 `repository@sha256`를 pull하고 `RepoDigests`를 대조합니다. 성공한 원본 명령·출력·종료 코드를 설정 PR 본문에 첨부합니다. 인증 실패·잘못된 digest·준비 파일 누락은 쓰기 전에 중단합니다.
 
-`bash .github/scripts/promote-image.sh`는 기본 git·gh·yq·jq·Docker CLI를 사용합니다. yq 4.54.3과 테스트용 direnv 2.38.2는 공식 binary SHA256을 검증해 설치합니다. 최신 main을 임시 git 저장소로 가져와 `image.digest`만 수정합니다. 최초에는 `.yaml.example`을 `.yaml`로 옮기는 변경을 같은 Git tree/커밋에 넣으며, 이미 활성 Application은 다시 만들지 않습니다. 설정 PR은 자동 병합하지 않고 이슈 닫기 키워드도 넣지 않습니다. gh/git 실패 시 PR 설정·GITHUB_TOKEN 권한을 확인하고 재실행하며 다른 브랜치를 강제로 덮지 않습니다. CI는 kubeconfig·kubectl·Argo CD 자격 증명을 사용하지 않습니다.
+`bash .github/scripts/promote-image.sh`는 기본 git·gh·yq·jq·Docker CLI를 사용합니다. yq 4.54.3은 공식 binary SHA256을 검증해 설치합니다. 최신 main을 임시 git 저장소로 가져와 `image.digest`만 수정합니다. 최초에는 `.yaml.example`을 `.yaml`로 옮기는 변경을 같은 Git tree/커밋에 넣으며, 이미 활성 Application은 다시 만들지 않습니다. 설정 PR은 자동 병합하지 않고 이슈 닫기 키워드도 넣지 않습니다. gh/git 실패 시 PR 설정·GITHUB_TOKEN 권한을 확인하고 재실행하며 다른 브랜치를 강제로 덮지 않습니다. CI는 kubeconfig·kubectl·Argo CD 자격 증명을 사용하지 않습니다.
 
 ## 로컬 검사와 미수행 범위
 
 ```sh
-python3 -m unittest discover -s scripts -p 'test_environment.py' -v
-python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+bash -n config/env/.envrc scripts/check-cluster.sh scripts/check-ssh.sh
+bash -n .github/scripts/promote-image.sh
 actionlint .github/workflows/backend.yaml
 ```
 
-Python 테스트는 실제 Bash 승격 진입점과 git·jq·yq를 실행해 잘못된 입력·익명 pull 실패 시 쓰기 차단·동일 digest·최초 활성화의 원자적 변경을 확인합니다. gh·Docker 경계는 대역으로 검증하고 git 쓰기는 테스트 전용 로컬 bare 저장소에만 수행합니다. 기존 승격 브랜치의 전체 tree가 기대 결과와 다르면 덮어쓰지 않습니다. actionlint는 workflow 문법 검사이며 실제 GitHub Actions 실행, GHCR public 전환, 익명 pull 성공, prod 배포를 증명하지 않습니다. 현재 Draft PR에서는 후자의 실제 검증이 남아 있습니다.
+Bash 문법과 workflow 문법을 먼저 확인합니다. 신뢰하지 않는 repository/ref 입력으로 `bash .github/scripts/promote-image.sh`를 실행하면 exit 2로 중단하고 Docker·Git 쓰기에 진입하지 않아야 합니다. 실제 승격 검증은 main workflow의 게시·익명 digest pull 명령과 결과로 확인합니다. 실패한 익명 pull에서는 설정 브랜치/PR이 없어야 하며, 동일 digest 재실행에서는 `Already promoted`와 변경 부재를 확인합니다. 최초 활성화 시에는 digest와 Application이 같은 커밋에 있는지 PR diff를 확인합니다. 기존 승격 브랜치의 전체 tree가 기대 결과와 다르면 덮어쓰지 않습니다. actionlint는 workflow 문법 검사이며 실제 GitHub Actions 실행, GHCR public 전환, 익명 pull 성공, prod 배포를 증명하지 않습니다. 현재 Draft PR에서는 후자의 실제 검증이 남아 있습니다.
