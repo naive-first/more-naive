@@ -1,0 +1,21 @@
+image:
+  repository: postgres
+  tag: 17.12-alpine
+podAnnotations: {}
+platform:
+  configMapName: ""
+  secretName: ""
+  keys:
+    database: DB_DATABASE
+    username: DB_USERNAME
+    password: DB_PASSWORD
+storage:
+  className: ""
+  size: 5Gi
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

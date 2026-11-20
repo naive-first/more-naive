@@ -16,8 +16,9 @@ printf -v remote 'bash -s -- %q %q %q %q' "$upstream" "$gateway" "$SSH_EXPECTED_
 set -euo pipefail
 upstream=$1; gateway=$2
 [[ $(hostname) == "$3" && $(id -un) == "$4" ]] || { echo 'remote hostname/user mismatch' >&2; exit 2; }
-status=$(tailscale status --json 2>/dev/null) || status='{}'
-serve=$(tailscale serve status --json 2>/dev/null) || serve='{}'
+command -v tailscale >/dev/null || { echo 'Tailscale is not installed on this SSH destination; inspect the actual tailnet proxy host' >&2; exit 2; }
+status=$(tailscale status --json 2>/dev/null) || { echo 'Tailscale status lookup failed' >&2; exit 1; }
+serve=$(tailscale serve status --json 2>/dev/null) || { echo 'Tailscale Serve lookup failed' >&2; exit 1; }
 sudo_ok=false; if sudo -n true >/dev/null 2>&1; then sudo_ok=true; fi
 upstream_status='NOT_RUN: actual private upstream not supplied'
 if [[ -n $upstream ]]; then

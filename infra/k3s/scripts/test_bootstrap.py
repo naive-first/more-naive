@@ -19,8 +19,8 @@ class BootstrapGuardTest(unittest.TestCase):
         (self.root/'dns').write_text('fixture.ts.net. 60 IN A 100.90.91.104\n')
         (self.root/'hostname').write_text('prod-node')
         (self.root/'status').write_text('{"BackendState":"Running"}')
-        for name, text in {'dig': 'cat "$FIXTURE_ROOT/dns"', 'ssh': '''printf '%s\\n' "$*" >> "$FIXTURE_ROOT/calls"
-case "$*" in *'id -un'*) printf 'study\\n%s\\n' "$(cat "$FIXTURE_ROOT/hostname")" ;; *) cat "$FIXTURE_ROOT/status" ;; esac'''} .items():
+        for name, text in {'tailscale': '''case $1 in status) cat "$FIXTURE_ROOT/status" ;; ping) test ! -f "$FIXTURE_ROOT/ping-failure" ;; esac''', 'dig': 'cat "$FIXTURE_ROOT/dns"', 'ssh': '''printf '%s\\n' "$*" >> "$FIXTURE_ROOT/calls"
+case "$*" in *'id -un'*) printf 'study\\n%s\\n' "$(cat "$FIXTURE_ROOT/hostname")" ;; *tailscale*) exit 127 ;; *) true ;; esac'''} .items():
             binary = self.binary/name; binary.write_text('#!/usr/bin/env bash\nset -eu\n'+text+'\n'); binary.chmod(0o700)
         self.script = Path(__file__).with_name('preflight.sh')
 
@@ -53,10 +53,21 @@ case "$*" in *'id -un'*) printf 'study\\n%s\\n' "$(cat "$FIXTURE_ROOT/hostname")
         self.assertEqual(len(self.calls()), 1)
         self.assertNotIn('test-only-token', str(self.calls())+result.stdout+result.stderr)
 
+    def test_stopped_operator_tailnet_refuses_before_sudo(self):
+        (self.root/'status').write_text('{"BackendState":"Stopped"}')
+        result=self.invoke();self.assertNotEqual(result.returncode,0)
+        self.assertFalse(any('sudo' in call for call in self.calls()))
+
+    def test_unreachable_tailnet_peer_refuses_before_sudo(self):
+        (self.root/'ping-failure').touch()
+        result=self.invoke();self.assertNotEqual(result.returncode,0)
+        self.assertFalse(any('sudo' in call for call in self.calls()))
+
     def test_preflight_does_not_install(self):
         result=self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.calls()), 2)
+        self.assertFalse(any('tailscale' in call for call in self.calls()))
         self.assertTrue(all('StrictHostKeyChecking=yes' in call for call in self.calls()))
         self.assertFalse(any('install.sh' in call or 'python' in call for call in self.calls()))
 

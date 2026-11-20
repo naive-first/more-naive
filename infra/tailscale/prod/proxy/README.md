@@ -1,6 +1,6 @@
 # 기존 proxy VM 확인
 
-현재 제공된 주소는 `study@study-k3s-access.tail373827.ts.net`(100.90.91.104)입니다. VM의 proxy/node 역할·실제 hostname·HTTPS hostname·TLS 종료·Istio 사설 upstream이 미확인입니다. 이 변경에서는 운영 연결을 실행하지 않았습니다. 연결 성공이나 proxy 제품을 확정하지 않습니다.
+현재 제공된 주소는 `study@more-naive-vm.tail373827.ts.net`(100.90.91.104)입니다. SSH 목적지의 OS/k3s 이름은 `more-naive-vm`이며, 실제 네트워크 주소는 `172.30.104.10`입니다. 이 Ubuntu VM에는 Tailscale CLI·daemon·service가 없어 Serve를 관리하는 장비라고 판단할 수 없습니다. 실제 Tailscale 호스트의 접속 정보와 HTTPS/TLS·사설 upstream 계약을 확인해야 합니다.
 
 ## 읽기 전용 검사
 
@@ -13,6 +13,10 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/proxy/inspe
 스크립트는 자기 VM의 Tailscale state·DNS 이름/IP·Serve 포트/host 목록과 비대화 sudo 가능 여부만 요약합니다. peer 목록, 전체 Serve 설정, 인증값, kubeconfig를 출력하지 않습니다. nginx/caddy 등 별도 proxy의 전체 설정도 출력하지 않으므로 그 제품을 쓰면 VM 운영자가 비밀을 제외한 TLS/Host/upstream 계약을 별도로 확인합니다. 설정 변경·Serve reset·Funnel·노드 재가입·서비스 재시작은 실행하지 않습니다.
 
 ## 사설 upstream 확인
+
+SSH 목적지에 Tailscale이 없거나 상태 조회가 실패하면 검사는 실패로 종료합니다. 빈 JSON으로 대체해 정상 연결 결과처럼 반환하지 않습니다.
+
+2026-11-21 실제 SSH 목적지에서 기존 코드는 Tailscale 조회 실패를 빈 JSON으로 바꿔 exit 0을 반환했고 `tailscale_state`·`dns_name`은 null이었습니다. 수정한 코드는 같은 목적지에서 Tailscale 부재를 명시하고 exit 2로 종료했습니다. 운영 k3s와 backend·DB는 정상이며, 실제 Tailscale 장비의 접속 정보가 준비되기 전 HTTPS/Serve 검증은 수행하지 않습니다.
 
 #15의 실제 gateway Service/Host/포트와 VM에서 도달 가능한 사설 경로가 확인되면 `PROXY_UPSTREAM_URL`과 `PROXY_GATEWAY_HOST`를 함께 설정합니다. VM에서 DNS를 해석해 공인 주소가 없는지 확인한 뒤 검증한 주소를 curl `--resolve`로 고정해 주어진 URL에 GET을 한 번 보내 HTTP 상태만 요약합니다. redirect는 따라가지 않고 TLS 인증서를 기본 검증합니다. URL의 인증값/query/fragment는 허용하지 않습니다. 404/503도 도달 상태일 뿐 실제 gateway/API 성공으로 세지 않습니다.
 

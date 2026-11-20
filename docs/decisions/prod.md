@@ -7,7 +7,7 @@
 | 대상 | 실행 주체와 관리 방식 |
 | --- | --- |
 | 인프라 | 운영자 호스트에서 Terraform CLI와 Terragrunt를 직접 실행합니다. provider로 자원을 관리하며 필요한 설치 명령만 provisioner로 실행합니다. |
-| RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 실제 관리 호스트는 운영자가 #39 적용 전에 확인합니다. |
+| RustFS | prod k3s 밖의 지속 관리 가능한 Docker 호스트에서 Terraform Docker provider로 구동합니다. 2026-11-15 확인한 `system-design-study` VM의 Docker에서 유지하며 k3s 리소스로 옮기지 않습니다. |
 | bootstrap state | 관리 호스트의 캐시·checkout 밖 절대 경로에 local backend로 보관합니다. RustFS 자체 state를 자신의 S3 backend로 이전하지 않습니다. |
 | prod state | RustFS 버킷의 `more-naive/prod/<unit>/terraform.tfstate`와 native `.tflock`을 사용합니다. AWS S3/DynamoDB 자원은 만들지 않습니다. |
 | Kubernetes | 최초 bootstrap이 k3s·Argo CD를 준비하고 이후 리소스는 선언 파일과 Helm values를 Argo CD가 관리합니다. |
@@ -19,7 +19,7 @@
 
 ## 고정 버전
 
-2026-11-14 공식 배포 정보와 호환 범위를 확인한 값입니다. 버전 고정과 실제 prod 설치 검증은 별개이며 아래 값으로 prod 검증을 수행했다고 주장하지 않습니다.
+2026-11-14 공식 배포 정보와 호환 범위를 확인한 값입니다. 2026-11-15 k3s·Argo CD·PostgreSQL·기존 RustFS의 실제 버전을 확인했습니다. backend·Istio·외부 HTTPS 경로의 운영 배포는 아직 수행하지 않았습니다.
 
 | 도구 | 고정 버전 | 근거와 적용 범위 |
 | --- | --- | --- |
@@ -40,19 +40,22 @@
 
 ## 실제 연결 정보와 확인할 입력
 
-사용자가 제공한 SSH 대상은 `study@study-k3s-access.tail373827.ts.net`입니다. 공개키와 macOS의 `~/.ssh/study-k3s-access` 경로가 제공됐지만 현재 Linux 작업 호스트에는 해당 개인키와 SSH 별칭이 없습니다. tailnet 주소 `100.90.91.104`는 조회됐으며 SSH 인증·sudo·기존 HTTPS 설정은 아직 확인하지 못했습니다. 키의 내용은 문서나 로그에 저장하지 않습니다.
+사용자가 제공한 `study@study-k3s-access.tail373827.ts.net`에 기존에 확인한 SSH host key와 개인키 파일로 접속하고 hostname·sudo를 확인했습니다. Tailnet peer `100.90.91.104`는 gateway이며 실제 VM의 hostname은 `system-design-study`, 내부 주소는 `172.30.104.10`입니다. 운영자 호스트의 Tailscale Running·peer ping을 검사하며 VM 안의 Tailscale daemon을 요구하지 않습니다. 키·토큰·비밀번호·kubeconfig 내용은 문서나 로그에 저장하지 않습니다.
 
-| 항목 | 현재 상태 | 확인 주체·시점 |
+| 항목 | 2026-11-15 실제 상태 | 근거·남은 범위 |
 | --- | --- | --- |
-| prod 공급자/계정/region | 미제공. 기존 VM 재사용과 새 VM 생성 중 결정 필요 | 운영자, network/compute 구현 전 |
-| 노드 수/역할/사양 | 미제공. 제공된 SSH VM의 prod 노드 역할도 미확인 | 운영자, #8·#37 실행 전 |
-| prod namespace | `more-naive-prod`를 프로젝트 기본값으로 사용 | bootstrap이 실제 context와 함께 검증 |
-| StorageClass | k3s `local-path`를 후보로 사용하되 실제 존재·디스크 용량은 미확인 | 운영자, #36 배포 전 |
-| RustFS 호스트/영속 경로 | prod k3s 밖 Docker 호스트, 절대 경로는 외부 입력 | 운영자, #39 적용 전 |
-| state endpoint/버킷/최소 권한 인증 | 루트 `env.prod`의 RustFS 전용 입력 | 운영자, #4 실행 전 |
-| SSH 개인키 | 현재 작업 호스트의 파일 경로 필요 | 사용자, 원격 검사 전 |
-| HTTPS hostname/TLS 종료/upstream | 기존 VM 설정을 읽은 뒤 확정. VM에서 ClusterIP 직접 접근을 가정하지 않음 | VM/tailnet 운영자, #38·#23 실행 전 |
-| 허용 사용자/접근 정책 | 기존 tailnet 정책을 먼저 확인. 공인 SSH·Funnel을 기본 개방하지 않음 | tailnet 운영자, #37·#38 실행 전 |
+| prod 호스트/노드 | 제공된 Ubuntu 24.04 VM 재사용, 단일 k3s server `system-design-study`, 12 vCPU·약 12GiB RAM | 새 VM 조달 없음, [설치·Ready·DNS raw](https://github.com/naive-first/more-naive/pull/49#issuecomment-6894253308) |
+| prod namespace | `more-naive-prod` 생성, 외부 Secret/ConfigMap 주입 후 PostgreSQL 배포 | dev 비활성 유지 |
+| StorageClass | 기본 `local-path` 확인, DB PVC 5Gi Bound | 설치 전 root 여유 약 89GiB, 단일 노드·디스크는 HA 아님 |
+| RustFS 호스트/영속 경로 | 같은 VM의 k3s 밖 Docker, `/var/lib/more-naive/rustfs-data` UID 10001 | 기존 컨테이너 healthy 유지 |
+| bootstrap state | `/var/lib/more-naive/rustfs-state/bootstrap.tfstate` local backend 유지 | 자신의 RustFS S3로 이전하지 않음 |
+| prod state | `more-naive-tfstate` 버킷, 별도 `more-naive-state` 인증, k3s/argocd key 생성 | 실제 두 state 읽기 성공·prod 밖 읽기 403, 잠금 충돌·장애 리허설은 별도 |
+| 운영자 API/state 접근 | SSH loopback tunnel: API `https://127.0.0.1:16443`, RustFS `http://127.0.0.1:19000` | Kubernetes CA/클라이언트 인증 유지, 관리 포트 공인 개방 없음 |
+| PostgreSQL | Service DNS 인증 SQL 성공, 17.12, Pod 1/1·PVC Bound | [배포·SQL raw](https://github.com/naive-first/more-naive/pull/48#issuecomment-6894361467), Pod 재시작 데이터 보존·backend 연동은 미검증 |
+| HTTPS hostname/TLS 종료/upstream | 미배포·미확정 | VM/tailnet 운영자, #38·#23 실행 전 확인 |
+| 허용 사용자/접근 정책 | 제공된 `study` SSH·sudo 및 현재 operator Tailnet 연결 확인 | tailnet 전체 ACL 검토·변경은 수행하지 않음 |
+
+터널·kubeconfig·env·state 인증 파일은 운영자 전용으로 보관합니다. SSH 터널은 클라이언트 연결에 의존하므로 종료 후에는 같은 검증된 목적지와 포워딩으로 다시 연결해야 합니다. 실제 Argo 설치와 공개 저장소 sync는 [Argo raw](https://github.com/naive-first/more-naive/pull/52#issuecomment-6894360960)에 기록했습니다.
 
 ## 입력과 접근 경계
 
