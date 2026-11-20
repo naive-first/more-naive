@@ -6,7 +6,7 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 
 ## 실행 문서
 
-아래 링크는 관련 선행 PR이 합쳐진 구조를 기준으로 합니다. 실제 prod 배포는 아직 완료하지 않았습니다.
+prod k3s·Argo CD·PostgreSQL·backend와 내부 Istio gateway를 배포했고 내부 CRUD를 검증했습니다. tailnet HTTPS·재시작 영속성 검증은 실제 Tailscale 장비의 접속 정보를 기다립니다.
 
 | 작업 | 정본 문서 |
 | --- | --- |
@@ -16,7 +16,7 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 | state 인증·버킷·native 잠금 | [state backend](infra/terragrunt/state-README.md) |
 | prod Terraform/Terragrunt native 실행 | [Terragrunt](infra/terragrunt/README.md) |
 | 대상 노드 확인·k3s 설치 | [k3s](infra/k3s/README.md)·[prod 확인](infra/k3s/config/prod/README.md) |
-| Tailscale 노드·proxy 현황 | [Tailscale](infra/tailscale/prod/README.md) |
+| Tailscale 노드·proxy 현황 | [기존 proxy](infra/tailscale/prod/proxy/README.md)·[신규 노드 PR #64](https://github.com/naive-first/more-naive/pull/64) |
 | Argo CD 설치·권한·자동 sync | [Argo CD](infra/argocd/README.md) |
 | Istio·gateway·prod 배포 | [infra](infra/README.md) |
 | 앱/DB 설정 외부 주입 | [Secret/ConfigMap](infra/secrets/prod/README.md) |
@@ -40,7 +40,7 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/smoke.sh
 
 실제 대상과 영향을 확인한 후 `--allow-write`를 추가하면 직접 만든 두 행으로 생성→조회→수정→삭제/404를 확인하고 직접 만든 행만 정리합니다. `--restart-backend` 또는 `--restart-db`를 추가하면 해당 workload만 rollout restart하고 저장값을 재조회합니다. PVC 삭제·전체 테이블 정리·백업/복원은 실행하지 않습니다. 정리에 실패하면 출력한 도구 소유 row ID만 확인합니다.
 
-실제 prod HTTPS CRUD/Pod 재시작은 접근 입력이 없어 미수행입니다. 이전 호환 digest/config를 Git revert하는 복구와 DB 데이터 복원을 혼동하지 않습니다. 설치/삭제·state/PVC 영향과 실패 진단은 각 정본 문서에서 확인합니다.
+실제 prod HTTPS 읽기 probe는 TLS handshake 단계에서 실패했습니다. SSH 목적지 Ubuntu에는 Tailscale이 없어 실제 Serve 소유 장비를 확인한 뒤 HTTPS CRUD/Pod 재시작을 검증해야 합니다. 이전 호환 digest/config를 Git revert하는 복구와 DB 데이터 복원을 혼동하지 않습니다. 설치/삭제·state/PVC 영향과 실패 진단은 각 정본 문서에서 확인합니다.
 
 ### smoke 확인 절차
 
