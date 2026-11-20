@@ -46,9 +46,9 @@ MORE_NAIVE_ENV=prod direnv exec "$REPO_ROOT/config/env" terragrunt run -- plan -
 
 ```bash
 terragrunt hcl fmt --check --working-dir infra/terragrunt
-uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_state.py
+MORE_NAIVE_ENV=prod direnv exec "$REPO_ROOT/config/env" terragrunt run -- state list
 ```
 
-2026-11-14 격리 Docker에서 버킷 생성/재실행, 제한 인증의 init/apply, state 객체 확인, 다른 prefix/버킷 거부, 새 작업 디렉터리 재조회, 잘못된 인증/누락 endpoint 중단 6건을 확인했습니다. 검증 resource는 `terraform_data` 하나이며 prod network/compute는 적용하지 않습니다. native 잠금 충돌·저장소 장애 실험은 #40입니다.
+`state list`는 앞 절에서 init한 실제 prod unit 디렉터리에서 실행하고 기존 resource 주소와 대조합니다. state 본문이나 인증 정보를 공유 로그로 출력하지 않습니다. 같은 backend와 unit key로 init·plan·state 조회를 수행한 실제 명령·종료 코드·결과를 PR에 기록합니다. native 잠금 충돌·저장소 장애·컨테이너 재생성 후 동일 state 재조회는 #40의 수동 절차와 실제 수행 기록으로 확인하며, 별도 검증 실행기를 두지 않습니다.
 
 머지 후 인프라 관리자가 #2 관리 호스트의 저장 보호·사설 TLS 경계와 버킷 관리자/state 전용 인증을 준비하고 정책을 연결한 뒤 init/격리 검증 결과를 확인합니다. state/lock key를 임의 삭제하거나 bootstrap local state를 원격 이전하지 않습니다. 백업 설정과 복원 리허설은 추가하지 않습니다.

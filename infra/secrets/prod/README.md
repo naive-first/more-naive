@@ -36,4 +36,13 @@ platform:
 
 Secret/ConfigMap 환경변수 변경은 이미 실행 중인 Pod에 자동 적용되지 않습니다. 일반 앱 설정은 운영자가 영향·순서를 확인해 backend Pod를 재시작하고 readiness와 CRUD를 확인합니다. DB 비밀번호 변경은 DB role의 실제 비밀번호와 Secret을 일치시킨 뒤 backend를 재시작하여 연결을 확인해야 합니다. Secret 갱신이나 PostgreSQL Pod 재시작만으로 기존 DB role 비밀번호가 변경됐다고 판정하지 않습니다. 이 도구는 SQL·Pod 재시작·삭제를 수행하지 않습니다.
 
-검증은 `python3 -m unittest discover -s scripts -p 'test_*.py' -v`입니다. 실제 Bash/jq와 fake kubectl 경계로 키 선택·stdin 전달·대상 검증·재실행·값 억제를 확인하며 실제 prod 주입과 Pod 참조 검증은 별도로 필요합니다. 로컬 `env.prod`/kubeconfig/생성 Secret을 Git·이미지·PR 로그에 넣지 않습니다. `env.prod` 삭제는 이미 주입된 객체를 삭제하지 않으며 Secret/ConfigMap을 별도로 삭제하면 새 Pod가 준비되지 않을 수 있습니다.
+구문과 대상 확인은 기존 Bash·kubectl 명령을 사용합니다.
+
+```bash
+bash -n scripts/inject-config.sh
+bash -n scripts/check-cluster.sh
+MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/check-cluster.sh
+MORE_NAIVE_ENV=prod direnv exec config/env kubectl --context more-naive-prod --namespace more-naive-prod get configmap/more-naive-config secret/more-naive-db
+```
+
+객체 조회는 존재·종류·key 수만 보여 주며 값 일치 검증을 대신하지 않습니다. 최초 주입이나 설정 변경 때 상단의 `--apply` 명령이 값 없이 `verified`를 출력하는지 확인하고, 실제 소비 Pod의 준비 상태를 확인합니다. 명령 예시를 실제 수행 결과로 기록하지 않습니다. 로컬 `env.prod`/kubeconfig/생성 Secret을 Git·이미지·PR 로그에 넣지 않습니다. `env.prod` 삭제는 이미 주입된 객체를 삭제하지 않으며 Secret/ConfigMap을 별도로 삭제하면 새 Pod가 준비되지 않을 수 있습니다.
