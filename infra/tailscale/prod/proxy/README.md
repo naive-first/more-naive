@@ -19,7 +19,8 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/proxy/inspe
 외부 VM에서 ClusterIP에 직접 도달한다고 가정하지 않습니다. 실제 사설 네트워크/터널/로컬 relay 중 확인한 최소 경로를 사용해야 합니다. [Tailscale Serve 문서](https://tailscale.com/docs/reference/tailscale-cli/serve)의 로컬 proxy 대상과 Istio까지의 전달 경로는 각각 확인합니다. 아직 구성이 없으므로 `tailscale serve` 변경 명령을 생성하거나 기존 설정을 덮어쓰지 않습니다.
 
 ```bash
-python3 -m unittest discover -s infra/tailscale/prod/proxy -p 'test*.py' -v
+bash -n infra/tailscale/prod/proxy/inspect_proxy.sh
+bash -n scripts/check-ssh.sh
 ```
 
-guard unit tests는 실제 VM 연결을 대신하지 않습니다. 2026-11-14 VM 검사·upstream 도달·TLS/HTTPS Host·재시작 유지 확인은 NOT_RUN입니다. VM/tailnet 운영자가 접속 권한·기존 설정·허용 사용자 정책을 제공하면 읽기 검사를 수행해 현재 제품/포트/TLS 종료/사설 경로를 기록하고 필요한 최소 변경을 검토합니다. 이후 #23에서 허용 클라이언트 HTTPS→Istio와 재시작 후 유지를 확인해야 합니다. Operator/OAuth Secret이나 공인 gateway/Funnel을 필수로 추가하지 않습니다.
+문법 검사와 `MORE_NAIVE_ENV=dev bash infra/tailscale/prod/proxy/inspect_proxy.sh`의 exit 2 입력 거절을 확인합니다. 이 로컬 확인은 실제 VM 연결을 대신하지 않습니다. 2026-11-14 VM 검사·upstream 도달·TLS/HTTPS Host·재시작 유지 확인은 NOT_RUN입니다. VM/tailnet 운영자가 접속 권한·기존 설정·허용 사용자 정책을 제공하면 읽기 검사를 수행해 현재 제품/포트/TLS 종료/사설 경로를 기록하고 필요한 최소 변경을 검토합니다. 이후 #23에서 허용 클라이언트 HTTPS→Istio와 재시작 후 유지를 확인해야 합니다. Operator/OAuth Secret이나 공인 gateway/Funnel을 필수로 추가하지 않습니다.
