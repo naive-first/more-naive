@@ -13,10 +13,10 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/node/regist
 최초 설치/등록에는 root·Linux amd64·systemd와 [정책 검토](policies/README.md)가 필요합니다. 검토·허용한 `config/env/.envrc`와 `env.prod`의 `TAILSCALE_EXPECTED_HOST`·`TAILSCALE_NODE_NAME`·`SSH_USER`·`TAILSCALE_TAGS`·`TAILSCALE_AUTH_KEY`를 direnv로 전달하며 값을 명령 인자/Git/Terraform state에 적지 않습니다. 노드 console에 전달할 때도 비밀을 화면이나 로그에 출력하지 않습니다. `--apply --policy-reviewed`가 있어야 신규 설치/등록을 진행합니다. auth key는 임시 0600 파일로 전달한 뒤 제거합니다. 기존 daemon state/service는 덮어쓰지 않습니다.
 
 ```bash
-python3 -m unittest discover -s infra/tailscale/prod/node -p 'test*.py' -v
+bash -n infra/tailscale/prod/node/register.sh
 ```
 
-로컬 guard 테스트는 실제 tailnet 등록의 증거가 아닙니다. 운영자는 신규 등록 뒤 `tailscale status`와 `tailscale version`을 확인하고 허용 운영자·OS 사용자로 SSH → hostname/user → `sudo -n true`를 확인합니다. 비허용 테스트 identity/OS 사용자로 거부도 확인합니다. node 재시작 뒤 재연결과 daemon 자동 실행을 확인합니다.
+로컬에서는 Bash 문법을 검사합니다. `MORE_NAIVE_ENV=dev bash infra/tailscale/prod/node/register.sh`는 exit 2로 중단해야 하며 다운로드·등록을 실행하지 않습니다. 문법 검사와 입력 거절은 실제 tailnet 등록의 증거가 아닙니다. 운영자는 신규 등록 뒤 `tailscale status`와 `tailscale version`을 확인하고 허용 운영자·OS 사용자로 SSH → hostname/user → `sudo -n true`를 확인합니다. 비허용 테스트 identity/OS 사용자로 거부도 확인합니다. node 재시작 뒤 재연결과 daemon 자동 실행을 확인합니다.
 
 ## 재연결과 장애 진단
 
