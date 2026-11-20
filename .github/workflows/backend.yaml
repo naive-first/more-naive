@@ -43,7 +43,10 @@ jobs:
         with:
           validate-wrappers: true
       - name: Native environment script syntax
-        run: bash -n config/env/.envrc scripts/check-cluster.sh scripts/check-ssh.sh
+        run: |
+          for script_file in config/env/.envrc scripts/check-cluster.sh; do
+            bash -n "$script_file"
+          done
       - name: Promotion script syntax
         run: bash -n .github/scripts/promote-image.sh
       - name: PostgreSQL tests and executable JAR

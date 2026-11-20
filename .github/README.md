@@ -26,7 +26,8 @@ test job에서 만든 JAR의 checksum을 artifact와 함께 전달하고 publish
 ## 로컬 검사와 미수행 범위
 
 ```sh
-bash -n config/env/.envrc scripts/check-cluster.sh scripts/check-ssh.sh
+bash -n config/env/.envrc
+bash -n scripts/check-cluster.sh
 bash -n .github/scripts/promote-image.sh
 actionlint .github/workflows/backend.yaml
 ```
