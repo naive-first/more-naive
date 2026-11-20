@@ -35,3 +35,15 @@ default project와 wildcard destination/resource에 의존하지 않습니다. b
 최초 bootstrap은 프로젝트를 준비한 뒤 존재하는 child를 Istio base→control plane→gateway→PostgreSQL→backend 순으로 선언합니다. 각 Application의 Synced/Healthy와 CRD Established·Deployment Available·StatefulSet rollout을 실제 대기한 뒤 다음 단계로 진행합니다. sync-wave 숫자를 다른 Application의 준비 완료로 취급하지 않습니다. Secret/ConfigMap은 #16 주입이 먼저 성공해야 DB/앱이 준비됩니다. 오류나 timeout은 다음 단계와 root 등록을 중단합니다.
 
 이후 main 변경은 automated enabled/selfHeal로 재조정하며 prune/allowEmpty는 false입니다. 호환되는 이전 digest/config를 Git revert하는 방식으로 되돌리고 DB 데이터 복원과 구분합니다. 선언 제거만으로 자원을 자동 삭제하지 않습니다. 명시적 삭제는 운영자가 리소스와 PVC 의존관계를 확인한 뒤 별도 수행하며 root/child에 자동 cascade 삭제 finalizer를 설정하지 않습니다.
+
+## native 검증
+
+등록 스크립트의 Bash 문법을 확인하고, Application이 지정한 Istio commit `38ee3e789233243dfadb0eddbcbaafac87bc7141` 소스를 저장소 밖에 받아 같은 prod values로 렌더링합니다. 아래 `ISTIO_SOURCE`는 그 고정 소스를 압축 해제한 절대 경로입니다.
+
+```bash
+bash -n infra/argocd/bootstrap/bootstrap.sh
+helm template istio-base "$ISTIO_SOURCE/manifests/charts/base" --namespace istio-system --values infra/environments/prod/istio-base.yaml
+helm template istiod "$ISTIO_SOURCE/manifests/charts/istio-control/istio-discovery" --namespace istio-system --values infra/environments/prod/istiod.yaml
+```
+
+실제 prod 반영 시에는 위 bootstrap의 `--apply`가 base Synced/Healthy와 CRD Established 뒤에 istiod를 등록하고 Available을 기다리는지 실행 결과로 확인합니다. `kubectl --context "$KUBE_CONTEXT" -n argocd get applications`와 `kubectl --context "$KUBE_CONTEXT" -n istio-system rollout status deployment/istiod --timeout=300s`를 기록합니다. 잘못된 context/API나 CRD 대기 실패에서는 후속 등록을 중단해야 합니다. 로컬 렌더링으로 CRD·webhook·운영 설치 완료를 주장하지 않습니다.
