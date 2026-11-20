@@ -1,0 +1,44 @@
+{{- if .Values.routing.enabled }}
+{{- $host := required "routing.host is required when routing is enabled" .Values.routing.host }}
+{{- $gateway := .Values.routing.gateway }}
+{{- if .Values.routing.createGateway }}
+{{- $gateway = printf "%s-gateway" .Release.Name }}
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gateway }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- toYaml .Values.routing.gatewaySelector | nindent 4 }}
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - {{ $host | quote }}
+---
+{{- end }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  hosts:
+    - {{ $host | quote }}
+  gateways:
+    - {{ required "routing.gateway is required unless createGateway is true" $gateway | quote }}
+  http:
+    - match:
+        - uri:
+            exact: /api/tests
+        - uri:
+            prefix: /api/tests/
+      route:
+        - destination:
+            host: {{ printf "%s.%s.svc.cluster.local" .Release.Name .Release.Namespace | quote }}
+            port:
+              number: 8080
+{{- end }}
