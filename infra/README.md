@@ -31,10 +31,10 @@ Host가 미확정이므로 `istio-route.yaml.example` values와 `ingress-route.y
 
 `backend.yaml`은 `spring-app` chart에 `platform.yaml` 다음으로 적용합니다. Secret/ConfigMap은 #16 외부 주입 결과만 참조합니다. PostgreSQL·설정·migration 성공 전에는 readiness가 성공하지 않아야 하며 DB 장애를 liveness 재시작으로 대체하지 않습니다.
 
-검증한 public GHCR digest가 아직 없으므로 초기 `image.digest`는 비어 있고 Application은 `backend.yaml.example`로 비활성 상태입니다. chart는 빈 digest를 거부합니다. #19 CI가 PostgreSQL 테스트→이미지 게시→같은 digest 익명 pull을 확인한 뒤 실제 digest와 `backend.yaml` Application 활성화를 포함하는 설정 PR을 준비합니다. main에 merge하면 Argo CD가 자동 sync하며 CI는 클러스터에 접속하지 않습니다.
+backend Application은 이미 활성화돼 있으며 prod values에는 익명 pull을 검증한 public GHCR digest가 반영돼 있습니다. 과거의 빈 digest·`backend.yaml.example`를 다시 추가하지 않습니다. #19 CI가 PostgreSQL 테스트→이미지 게시→같은 digest 익명 pull을 확인한 뒤 digest 변경 설정 PR을 생성합니다. main에 merge하면 Argo CD가 자동 sync하며 CI는 클러스터에 접속하지 않습니다.
 
 HTTPS hostname/route는 #38·#23에서 실제 값을 확인하기 전까지 비활성입니다. digest 확인이 Host/사설 upstream 검증을 대신하지 않습니다. 최초 배포는 Secret/ConfigMap→PostgreSQL Ready/PVC→migration/backend Ready·sidecar·Service endpoints→자동 Synced/Healthy→tailnet HTTPS CRUD 순서로 확인합니다.
 
-prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. backend 재시작 후 같은 행을 다시 조회하고 마지막에 직접 만든 행만 삭제합니다. 실제 prod 접근이 준비되지 않아 이 검증과 이전 호환 digest/config Git revert는 아직 수행하지 않았습니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
+prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. 내부 Service 경로의 CRUD·DB 저장/삭제는 실제 검증했고 테스트 행은 정리했습니다. tailnet HTTPS와 재시작 영속성은 실제 Tailscale 호스트·TLS/사설 경로 확인 후 검증합니다. backend 재시작 후 같은 행을 다시 조회하고 마지막에 직접 만든 행만 삭제합니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
 
-관련 문서: [Tailscale 노드](tailscale/prod/README.md), [기존 proxy 검사](tailscale/prod/proxy/README.md), [PostgreSQL chart](charts/postgres/README.md), [backend chart](charts/spring-app/README.md), [설정 외부 주입](secrets/prod/README.md).
+관련 문서: [신규 Tailscale 노드 PR #64](https://github.com/naive-first/more-naive/pull/64), [기존 proxy 검사](tailscale/prod/proxy/README.md), [PostgreSQL chart](charts/postgres/README.md), [backend chart](charts/spring-app/README.md), [설정 외부 주입](secrets/prod/README.md).

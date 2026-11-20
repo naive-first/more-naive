@@ -1,0 +1,25 @@
+replicaCount: 1
+image:
+  repository: ""
+  digest: ""
+platform:
+  configMapName: ""
+  secretName: ""
+  keys:
+    url: DB_URL
+    username: DB_USERNAME
+    password: DB_PASSWORD
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi
+routing:
+  enabled: false
+  host: ""
+  createGateway: false
+  gateway: ""
+  gatewaySelector:
+    istio: ingressgateway
