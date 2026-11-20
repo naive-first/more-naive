@@ -42,11 +42,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           validate-wrappers: true
-      - name: Install checksum-pinned native tools
-        run: |
-          curl --fail --silent --show-error --location https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_linux_amd64 --output "$RUNNER_TEMP/yq"
-          echo "129534601871538efe0ba4c5e62a34fb1d5f469bcb975c4fddeb467d82974973  $RUNNER_TEMP/yq" | sha256sum --check --status
-          sudo install -m 755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
       - name: Native environment script syntax
         run: bash -n config/env/.envrc scripts/check-cluster.sh scripts/check-ssh.sh
       - name: Promotion script syntax
