@@ -9,7 +9,7 @@ helm template argocd oci://ghcr.io/argoproj/argo-helm/argo-cd --version 10.18.0 
 if [[ $# == 0 ]]; then echo 'prod context/API and chart verified; no cluster writes'; exit 0; fi
 kube=(kubectl --context "$KUBE_CONTEXT" --request-timeout=30s)
 for name in istio-system more-naive-prod; do
-  jq -n --arg name "$name" '{apiVersion:"v1",kind:"Namespace",metadata:{name:$name}}' | "${kube[@]}" apply -f -
+  jq -n --arg name "$name" '{apiVersion:"v1",kind:"Namespace",metadata:({name:$name} + if $name == "more-naive-prod" then {labels:{"istio-injection":"enabled"}} else {} end)}' | "${kube[@]}" apply -f -
 done
 if [[ -n $repo_token ]]; then
   if ! ARGO_REPO_TOKEN="$repo_token" ARGO_REPO_USERNAME="$repo_username" jq -n -f "$root/infra/argocd/bootstrap/repository-secret.jq" |
