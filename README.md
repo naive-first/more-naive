@@ -41,3 +41,12 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/smoke.sh
 실제 대상과 영향을 확인한 후 `--allow-write`를 추가하면 직접 만든 두 행으로 생성→조회→수정→삭제/404를 확인하고 직접 만든 행만 정리합니다. `--restart-backend` 또는 `--restart-db`를 추가하면 해당 workload만 rollout restart하고 저장값을 재조회합니다. PVC 삭제·전체 테이블 정리·백업/복원은 실행하지 않습니다. 정리에 실패하면 출력한 도구 소유 row ID만 확인합니다.
 
 실제 prod HTTPS CRUD/Pod 재시작은 접근 입력이 없어 미수행입니다. 이전 호환 digest/config를 Git revert하는 복구와 DB 데이터 복원을 혼동하지 않습니다. 설치/삭제·state/PVC 영향과 실패 진단은 각 정본 문서에서 확인합니다.
+
+### smoke 확인 절차
+
+```bash
+bash -n scripts/smoke.sh
+MORE_NAIVE_ENV=dev bash scripts/smoke.sh
+```
+
+두 번째 명령은 exit 2로 중단하고 HTTP 요청이나 Pod 변경을 실행하지 않아야 합니다. 실제 prod 검증은 위의 읽기 전용 실행으로 시작합니다. 쓰기를 허용한 실행에서는 생성 응답의 id/value, 수정 후 재조회와 control 행 불변, 삭제 뒤 404 및 직접 만든 행의 정리 결과를 기록합니다. backend/DB 재시작은 각각의 opt-in을 준 경우에만 같은 행을 재조회합니다. 로컬 문법·입력 검사를 운영 CRUD·재시작 데이터 보존 결과로 기록하지 않습니다.
