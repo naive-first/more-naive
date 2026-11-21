@@ -10,7 +10,7 @@ resources:
     cpu: '1'
     memory: 768Mi
 routing:
-  enabled: false
-  host: ''
+  enabled: true
+  host: more-naive-vm-1.tail373827.ts.net
   createGateway: false
   gateway: istio-system/more-naive-gateway
