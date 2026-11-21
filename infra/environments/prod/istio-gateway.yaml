@@ -1,0 +1,22 @@
+labels:
+  istio: ingressgateway
+service:
+  type: ClusterIP
+  ports:
+  - name: status-port
+    port: 15021
+    targetPort: 15021
+    protocol: TCP
+  - name: http2
+    port: 80
+    targetPort: 80
+    protocol: TCP
+autoscaling:
+  enabled: false
+replicaCount: 1
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi

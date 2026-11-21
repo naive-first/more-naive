@@ -1,25 +1,41 @@
 # prod Tailscale 접근
 
-신규 노드는 Tailscale 1.104.7 Linux amd64 정적 배포본을 checksum으로 검증합니다. [공식 정적 설치 문서](https://tailscale.com/docs/install/static)에 따라 daemon을 지속 서비스로 관리합니다. 실행 호스트에는 Bash·jq·direnv, 최초 설치에는 curl·sha256sum·tar·install·systemctl이 필요합니다. 기존 등록 노드는 재가입·자동 업그레이드·SSH 설정 변경을 하지 않고 Running과 기대 node 이름을 확인합니다.
+Tailscale이 없는 VM도 배포 경로에서 설치합니다. 고정 `1.104.7` Linux amd64 정적 배포본의 checksum을 검증하고 `more-naive-tailscaled.service`를 설치·자동 시작합니다. 기존 등록 노드는 재가입·자동 업그레이드·SSH 설정 변경을 하지 않습니다. [공식 정적 설치 문서](https://tailscale.com/docs/install/static)를 따릅니다.
 
-## 첫 노드 등록
+## VM 설치
 
-공인 SSH를 기본 개방하지 않습니다. 운영자가 공급자의 console/cloud-init 등 신뢰한 초기 진입 경로에서 실제 node hostname·OS 사용자와 권한을 확인합니다. `node/register.sh`는 그 노드에서 실행하며 기본은 확인만 합니다. 예시를 실제 값으로 대체합니다.
+표준 `env.prod`의 `SSH_HOST`·`SSH_USER`·`SSH_KEY_FILE`·`SSH_HOST_KEY`·`SSH_EXPECTED_HOST`와 실제 OS 호스트명인 `TAILSCALE_EXPECTED_HOST`를 준비합니다. 현재 SSH 목적지는 `more-naive-vm.tail373827.ts.net`, OS/k3s 이름은 `more-naive-vm`입니다. `100.90.91.104`는 기존 SSH 진입 주소이며 새로 설치할 guest의 tailnet identity로 자동 이전하지 않습니다.
+
+설치 unit은 기존 RustFS backend의 `more-naive/prod/tailscale/terraform.tfstate`를 사용합니다. RustFS 자체 bootstrap state는 기존 local 경로에 유지합니다. Terraform CLI `1.17.2`, Terragrunt `1.2.2`, Bash·OpenSSH·dig·direnv가 필요합니다. VM에는 Linux amd64·systemd·비대화 sudo와 curl·sha256sum·tar·install·jq·pgrep이 필요합니다.
 
 ```bash
-MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/node/register.sh
+umask 077
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- init -input=false
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- plan -input=false -out=/absolute/private/tailscale.tfplan
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- apply -input=false /absolute/private/tailscale.tfplan
 ```
 
-최초 설치/등록에는 root·Linux amd64·systemd와 [정책 검토](policies/README.md)가 필요합니다. 검토·허용한 `config/env/.envrc`와 `env.prod`의 `TAILSCALE_EXPECTED_HOST`·`TAILSCALE_NODE_NAME`·`SSH_USER`·`TAILSCALE_TAGS`·`TAILSCALE_AUTH_KEY`를 direnv로 전달하며 값을 명령 인자/Git/Terraform state에 적지 않습니다. 노드 console에 전달할 때도 비밀을 화면이나 로그에 출력하지 않습니다. `--apply --policy-reviewed`가 있어야 신규 설치/등록을 진행합니다. auth key는 임시 0600 파일로 전달한 뒤 제거합니다. 기존 daemon state/service는 덮어쓰지 않습니다.
+init/plan/apply 전에 실제 SSH user/hostname·tailnet 주소·기존 host key를 확인합니다. native file/remote-exec provisioner가 설치 스크립트와 systemd unit만 임시 0700 경로로 전달해 `register.sh --apply --install-only`를 실행하고 전달 파일을 정리합니다. 개인키 경로는 ephemeral 변수이며 가입 키는 Terraform 입력·plan/state에 포함하지 않습니다.
+
+신규 설치 전 기존 state·package/managed service·daemon을 확인해 덮어쓰지 않습니다. 이미 CLI가 있으면 설치나 서비스 재시작 없이 상태만 확인합니다. 변경이 없는 후속 Terragrunt plan은 no-op입니다. 외부에서 패키지·서비스를 삭제한 경우에는 실제 상태를 확인한 뒤 설치 resource의 명시적 교체를 검토하며 자동으로 등록 identity를 재생성하지 않습니다.
+
+## Tailnet 가입
+
+설치와 가입은 구분합니다. `NeedsLogin`은 바이너리·daemon 설치 완료이며 tailnet 접속·Serve·HTTPS 성공이 아닙니다. 인증이 없어도 설치 단계는 완료합니다. 가입하려면 VM의 신뢰한 console에서 `TAILSCALE_EXPECTED_HOST`·`TAILSCALE_NODE_NAME`·`SSH_USER`·`TAILSCALE_TAGS`·`TAILSCALE_AUTH_KEY`를 준비하고 [정책](policies/README.md)을 검토합니다.
+
+```bash
+MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/node/register.sh --apply --policy-reviewed
+```
+
+이 명령은 노드에서 실행합니다. root가 필요하며 auth key는 임시 0600 파일로 전달한 뒤 삭제합니다. 키를 명령 인자·Git·로그·Terraform state에 적지 않습니다. 현재 Running인 노드는 이름을 확인한 뒤 등록이나 SSH 설정을 바꾸지 않습니다. 기존 identity가 있으나 NeedsLogin이면 자동 재가입하지 않고 승인·만료·정책을 확인합니다. 새 VM의 실제 IP/DNS는 가입 후 조회하며 기존 장비와 이름이 같아도 같은 identity/IP가 된다고 가정하지 않습니다.
+
+## 확인
 
 ```bash
 bash -n infra/tailscale/prod/node/register.sh
+MORE_NAIVE_ENV=dev bash infra/tailscale/prod/node/register.sh --install-only
 ```
 
-로컬에서는 Bash 문법을 검사합니다. `MORE_NAIVE_ENV=dev bash infra/tailscale/prod/node/register.sh`는 exit 2로 중단해야 하며 다운로드·등록을 실행하지 않습니다. 문법 검사와 입력 거절은 실제 tailnet 등록의 증거가 아닙니다. 운영자는 신규 등록 뒤 `tailscale status`와 `tailscale version`을 확인하고 허용 운영자·OS 사용자로 SSH → hostname/user → `sudo -n true`를 확인합니다. 비허용 테스트 identity/OS 사용자로 거부도 확인합니다. node 재시작 뒤 재연결과 daemon 자동 실행을 확인합니다.
+두 번째 명령은 exit 2로 다운로드·등록 전에 거절돼야 합니다. 설치 후 VM에서 `tailscale version`, `systemctl is-active more-naive-tailscaled.service`, `systemctl is-enabled more-naive-tailscaled.service`와 `tailscale status --json`의 BackendState를 확인합니다. 전체 peer 목록·daemon state·인증값은 공유하지 않습니다.
 
-## 재연결과 장애 진단
-
-Running인 기존 노드는 등록 인증을 다시 제출하지 않습니다. 키 만료/NeedsLogin이나 node-name 불일치는 도구가 중단하며 관리자가 기존 node identity·승인/만료·tag/policy·daemon 상태를 확인합니다. 인증 실패는 키의 유효기간/재사용/태그 권한을 확인하되 auth key 자체를 로그로 출력하지 않습니다. 기존 노드의 SSH가 꺼져 있으면 관리자가 현재 설정과 승인 정책을 대조한 뒤 별도로 활성화합니다.
-
-2026-11-14 제공된 대상은 `study@study-k3s-access.tail373827.ts.net`(tailnet IP `100.90.91.104`)입니다. 이 VM의 node/proxy 역할은 선택하지 않았습니다. 이 변경에서는 운영 연결이나 신규 가입을 실행하지 않았습니다. 따라서 허용/거부·sudo·재시작/재연결은 NOT_RUN입니다. VM/tailnet 운영자가 #8의 실제 node 정보와 개인키/known_hosts·현재 정책을 준비한 뒤 위 확인을 수행해야 #37을 완료합니다. dev 노드, Funnel, 공인 관리 포트는 추가하지 않습니다.
+가입 후 허용 운영자의 SSH·hostname/user·sudo와 비허용 identity/사용자의 거절, 실제 DNS와 Serve 설정, 재연결을 확인합니다. prod HTTPS CRUD·workload 재시작 데이터 보존은 #26에서 고유 검증 행만 사용합니다. 설치 확인을 tailnet 가입·HTTPS 성공으로 기록하지 않으며 dev 노드·Funnel·공인 관리 포트를 추가하지 않습니다.

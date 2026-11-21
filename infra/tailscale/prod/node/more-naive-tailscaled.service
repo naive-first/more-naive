@@ -6,6 +6,7 @@ Wants=network-online.target
 ExecStart=/usr/local/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock
 RuntimeDirectory=tailscale
 StateDirectory=tailscale
+StateDirectoryMode=0700
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target

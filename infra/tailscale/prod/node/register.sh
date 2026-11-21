@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
-apply=false; reviewed=false
+apply=false; reviewed=false; install_only=false
 for arg in "$@"; do
-  case $arg in --apply) apply=true;; --policy-reviewed) reviewed=true;; *) echo 'use --apply --policy-reviewed after preflight' >&2; exit 2;; esac
+  case $arg in --apply) apply=true;; --policy-reviewed) reviewed=true;; --install-only) install_only=true;; *) echo 'use --install-only or --apply --policy-reviewed after preflight' >&2; exit 2;; esac
 done
 fail() { echo "$1" >&2; exit 2; }
 [[ ${MORE_NAIVE_ENV-} == prod && ${TAILSCALE_EXPECTED_HOST-} == "$(hostname)" ]] || fail 'explicit prod and matching console hostname required'
-[[ ${TAILSCALE_NODE_NAME-} =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || fail 'invalid node name'
 [[ ${SSH_USER-} =~ ^[a-z_][a-z0-9_-]*$ ]] && id "$SSH_USER" >/dev/null 2>&1 || fail 'existing OS user required'
-[[ -z ${TAILSCALE_TAGS-} || $TAILSCALE_TAGS =~ ^tag:[a-zA-Z0-9-]+(,tag:[a-zA-Z0-9-]+)*$ ]] || fail 'invalid tags'
+if ! $install_only; then
+  [[ ${TAILSCALE_NODE_NAME-} =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || fail 'invalid node name'
+  [[ -z ${TAILSCALE_TAGS-} || $TAILSCALE_TAGS =~ ^tag:[a-zA-Z0-9-]+(,tag:[a-zA-Z0-9-]+)*$ ]] || fail 'invalid tags'
+fi
 join_key=${TAILSCALE_AUTH_KEY-}; unset TAILSCALE_AUTH_KEY
+if $install_only; then unset join_key; fi
 if ! command -v tailscale >/dev/null; then
   if ! $apply; then echo 'NOT_RUN: new node needs pinned Tailscale 1.104.7; preflight only'; exit 0; fi
   [[ $(id -u) == 0 && $(uname -s) == Linux && $(uname -m) == x86_64 ]] || fail 'first installation supports root on Linux amd64 only'
-  [[ $reviewed == true && -n $join_key ]] || fail 'reviewed policy and external join key required before installation'
+  if ! $install_only; then [[ $reviewed == true && -n $join_key ]] || fail 'reviewed policy and external join key required before enrollment'; fi
   [[ ! -e /var/lib/tailscale/tailscaled.state && ! -e /etc/systemd/system/tailscaled.service ]] || fail 'existing daemon state/service requires review'
   [[ ! -e /etc/systemd/system/more-naive-tailscaled.service ]] || fail 'existing managed service requires review'
-  for tool in curl sha256sum tar install systemctl jq; do command -v "$tool" >/dev/null || fail "required command missing: $tool"; done
+  for tool in curl sha256sum tar install systemctl jq pgrep; do command -v "$tool" >/dev/null || fail "required command missing: $tool"; done
+  if systemctl cat tailscaled.service >/dev/null 2>&1 || systemctl cat more-naive-tailscaled.service >/dev/null 2>&1 || pgrep -x tailscaled >/dev/null; then fail 'existing daemon/service requires review'; fi
   temporary=$(mktemp -d); trap 'rm -rf "$temporary"' EXIT
   curl --fail --silent --show-error --location --max-time 60 https://pkgs.tailscale.com/stable/tailscale_1.104.7_amd64.tgz -o "$temporary/archive.tgz"
   printf '%s  %s\n' e56693ff74a64f2591b7e819c280635a100aae1ddfb0ef058fcd052b7cd8d16c "$temporary/archive.tgz" | sha256sum --check --status || fail 'official static archive checksum mismatch'
@@ -28,7 +32,17 @@ if ! command -v tailscale >/dev/null; then
   systemctl enable --now more-naive-tailscaled.service
   rm -rf "$temporary"; trap - EXIT
 fi
-status=$(tailscale status --json)
+status=; status_ready=false
+for ((attempt=0; attempt<20; attempt++)); do
+  if status=$(tailscale status --json 2>/dev/null); then status_ready=true; break; fi
+  sleep 1
+done
+[[ $status_ready == true ]] || fail 'Tailscale daemon status unavailable'
+if $install_only; then
+  state=$(jq -er '.BackendState' <<< "$status") || fail 'Tailscale status has no backend state'
+  printf 'Tailscale installed; BackendState=%s; enrollment unchanged\n' "$state"
+  exit 0
+fi
 if [[ $(jq -er '.BackendState' <<< "$status") == Running ]]; then
   [[ $(jq -er '.Self.HostName' <<< "$status") == "$TAILSCALE_NODE_NAME" ]] || fail 'existing node name differs; enrollment unchanged'
   echo 'Existing node Running; enrollment and SSH settings unchanged'; exit 0
