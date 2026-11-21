@@ -35,4 +35,6 @@ backend Application은 이미 활성화돼 있으며 prod values에는 익명 pu
 
 HTTPS hostname/route는 인증된 노드 DNS로 활성화합니다. 최초 배포는 Secret/ConfigMap→PostgreSQL Ready/PVC→migration/backend Ready·sidecar·Service endpoints→자동 Synced/Healthy→tailnet HTTPS CRUD 순서로 확인합니다.
 
-prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. 내부 Service 경로의 CRUD·DB 저장/삭제는 실제 검증했고 테스트 행은 정리했습니다. tailnet HTTPS와 재시작 영속성은 실제 Tailscale 호스트·TLS/사설 경로 확인 후 검증합니다. backend 재시작 후 같은 행을 다시 조회하고 마지막에 직접 만든 행만 삭제합니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
+prod 쓰기 검증과 Pod 재시작은 대상 context/API와 명시적 opt-in을 확인하고 직접 만든 행만 사용합니다. 내부 CRUD 및 실제 tailnet HTTPS 인증서·HTTP 200을 확인했습니다. 재시작 영속성은 `scripts/smoke.sh --allow-write --restart-backend --restart-db`로 같은 행을 재조회하고 마지막에 직접 만든 행만 삭제합니다. 이미지 rollback이 DB schema나 데이터를 되돌린다고 가정하지 않으며 PVC 삭제·백업/복원은 이 검증에 포함하지 않습니다.
+
+관련 문서: [신규 Tailscale 노드 PR #64](https://github.com/naive-first/more-naive/pull/64), [기존 proxy 검사](tailscale/prod/proxy/README.md), [PostgreSQL chart](charts/postgres/README.md), [backend chart](charts/spring-app/README.md), [설정 외부 주입](secrets/prod/README.md).
