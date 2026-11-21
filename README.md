@@ -22,6 +22,48 @@ prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM 
 | 앱/DB 설정 외부 주입 | [Secret/ConfigMap](infra/secrets/prod/README.md) |
 | PostgreSQL prod values·PVC | [prod DB](infra/environments/prod/README.md) |
 
+## Argo CD·API에 접속하기
+
+**먼저 관리자에게 Tailscale 접근 권한을 받고, 승인된 계정으로 Tailscale에 연결해야 합니다.** 아래 주소는 Tailscale 사설 네트워크(tailnet) 안에서 사용합니다. URL만 전달받아서는 접속할 수 없습니다.
+
+1. 프로젝트 관리자에게 사용할 계정을 알려 주고 tailnet 초대와 대상 서비스 접근 허용을 요청합니다. 기기 승인이 필요한 경우 승인까지 받습니다.
+2. 내 PC에 Tailscale 클라이언트를 설치하고 초대받은 계정으로 로그인한 뒤 해당 tailnet에 연결합니다. CLI를 쓰는 환경에서는 `tailscale status`로 연결 상태를 확인합니다.
+3. API 사용자는 HTTPS 서비스 접근 권한을, Argo CD 운영자는 추가로 VM SSH·sudo 권한과 Argo CD 로그인 계정을 전달받습니다. Tailscale 연결만으로 SSH·Argo CD 권한이 부여되지는 않습니다.
+
+### API 조회
+
+API 주소는 `https://more-naive-vm-1.tail373827.ts.net/api/tests`입니다. 브라우저에서 열거나 다음 읽기 전용 요청으로 확인합니다. 정상 응답은 HTTP 200과 JSON 배열이며 데이터가 없으면 `[]`입니다.
+
+```bash
+curl --fail --silent --show-error \
+  https://more-naive-vm-1.tail373827.ts.net/api/tests
+```
+
+상세 조회는 `/api/tests/{id}`이며 생성·수정·삭제 요청과 응답은 [backend API 문서](backend/README.md)를 따릅니다. 관리용 SSH DNS인 `more-naive-vm.tail373827.ts.net`과 HTTPS 서비스 DNS인 `more-naive-vm-1.tail373827.ts.net`을 구분합니다.
+
+### Argo CD 화면
+
+Argo CD는 ClusterIP로만 열려 있고 공개 접속 URL은 없습니다. 승인받은 운영자는 로컬 PC의 터미널에서 다음 SSH 연결을 유지합니다. `study` 계정의 SSH 인증과 VM에서 `sudo k3s kubectl`을 실행할 권한이 필요하며, 별도 개인키를 전달받았다면 SSH의 `-i` 옵션으로 지정합니다.
+
+```bash
+ssh -o ExitOnForwardFailure=yes -t \
+  -L 127.0.0.1:18081:127.0.0.1:18081 \
+  study@more-naive-vm.tail373827.ts.net \
+  'sudo k3s kubectl -n argocd port-forward --address=127.0.0.1 service/argocd-server 18081:443'
+```
+
+`Forwarding from 127.0.0.1:18081` 메시지가 나오면 같은 PC의 브라우저에서 `https://127.0.0.1:18081`을 열고 관리자가 전달한 Argo CD 계정으로 로그인합니다. 로컬 터널 주소와 서버 인증서가 맞지 않아 경고가 나오면 관리자에게 인증서와 접속 대상을 확인합니다. 비밀번호·개인키를 README나 PR에 적지 않습니다. 사용을 마치면 터미널에서 `Ctrl+C`로 연결을 종료합니다.
+
+### 접속이 안 될 때
+
+| 증상 | 확인할 항목 |
+| --- | --- |
+| DNS 조회 실패·연결 시간 초과 | Tailscale 연결과 올바른 tailnet·기기 승인·대상 서비스 접근 정책을 관리자에게 확인합니다. |
+| API 인증서 오류·404 | 위 HTTPS 서비스 DNS와 `/api/tests` 경로를 확인합니다. TLS 검증을 끄지 않고, 계속 실패하면 [proxy 운영 문서](infra/tailscale/prod/proxy/README.md)를 따라 운영자가 점검합니다. |
+| SSH 인증·sudo 거부 | 승인된 SSH 사용자·개인키·VM sudo 권한을 확인합니다. API 접근 권한과 별도입니다. |
+| 로컬 18081 포트 사용 중 | 기존 사용 프로세스를 확인하고 다른 로컬 포트를 선택해 SSH `-L`의 첫 포트와 브라우저 주소를 함께 바꿉니다. |
+| Argo CD 화면은 열리지만 로그인·조회 거부 | Argo CD 계정과 역할 권한을 관리자에게 요청합니다. 설치·권한 설정은 [Argo CD 운영 문서](infra/argocd/README.md)를 따릅니다. |
+
 ## local 검증과 prod 구축
 
 local은 루트 `env.dev`의 `DB_*`를 선택해 앱과 Compose 테스트 DB를 실행합니다. CI는 별도 테스트 값을 주입하며 `env.prod`가 필요하지 않습니다. 준비/명령/검증은 backend·scripts 문서를 따릅니다. dev 자원/자격 증명을 생성하지 않습니다.
