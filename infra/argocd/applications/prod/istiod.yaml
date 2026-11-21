@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istiod
+  namespace: argocd
+spec:
+  project: more-naive-platform
+  sources:
+  - repoURL: https://github.com/istio/istio.git
+    targetRevision: 38ee3e789233243dfadb0eddbcbaafac87bc7141
+    helm:
+      releaseName: istiod
+      valueFiles:
+      - $values/infra/environments/prod/istiod.yaml
+    path: manifests/charts/istio-control/istio-discovery
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  ignoreDifferences:
+  - group: admissionregistration.k8s.io
+    kind: ValidatingWebhookConfiguration
+    name: istio-validator-istio-system
+    jqPathExpressions:
+    - .webhooks[]?.clientConfig.caBundle
+    - .webhooks[]?.failurePolicy
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: false
+      allowEmpty: false
+    syncOptions:
+    - ServerSideApply=true
+    - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

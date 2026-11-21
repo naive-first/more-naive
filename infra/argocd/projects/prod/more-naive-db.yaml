@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: more-naive-db
+  namespace: argocd
+spec:
+  sourceRepos:
+  - https://github.com/naive-first/more-naive.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: more-naive-prod
+  namespaceResourceWhitelist:
+  - group: apps
+    kind: StatefulSet
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: PersistentVolumeClaim
+  clusterResourceWhitelist: []

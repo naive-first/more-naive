@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+spec:
+  project: more-naive-db
+  sources:
+    - repoURL: https://github.com/naive-first/more-naive.git
+      targetRevision: main
+      path: infra/charts/postgres
+      helm:
+        releaseName: postgres
+        valueFiles:
+          - $values/infra/environments/prod/platform.yaml
+          - $values/infra/environments/prod/postgres.yaml
+    - repoURL: https://github.com/naive-first/more-naive.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: more-naive-prod
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false

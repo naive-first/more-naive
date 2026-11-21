@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-route
+  namespace: argocd
+spec:
+  project: more-naive-platform
+  sources:
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    path: infra/charts/istio-route
+    helm:
+      releaseName: more-naive-gateway
+      valueFiles:
+      - $values/infra/environments/prod/istio-route.yaml
+  - repoURL: https://github.com/naive-first/more-naive.git
+    targetRevision: main
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: false
+      allowEmpty: false
