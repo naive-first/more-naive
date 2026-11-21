@@ -77,6 +77,34 @@ curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
 
 되돌릴 때는 이 변경의 GitOps 라우트와 Helm subpath values를 함께 이전 값으로 되돌리고 native plan/apply와 기존 API를 재검증합니다. 자동 prune이 꺼져 있으므로 Git에서 새 VirtualService 선언을 제거해도 클러스터에서는 자동 삭제되지 않습니다. 운영자가 이름·namespace·의존 관계를 확인한 뒤 해당 `istio-system/argocd` VirtualService만 명시적으로 제거해야 합니다. 기존 Gateway·backend·DB/PVC·Serve는 삭제하지 않습니다.
 
+## env에서 admin 비밀번호 설정
+
+기본 관리자 아이디는 `admin`입니다. `env.dev`와 `env.prod`는 같은 선택 키 `ARGOCD_ADMIN_PASSWORD_HASH`를 사용하며 실제 배포는 prod만 지원합니다. 처음부터 비워 두면 Argo의 기존/초기 비밀번호를 유지합니다. 운영 비밀번호를 지정하려면 평문 대신 bcrypt 해시를 `env.prod`에 넣습니다. [고정 Helm chart의 공식 설정](https://github.com/argoproj/argo-helm/blob/argo-cd-10.18.0/charts/argo-cd/values.yaml#L673-L679)을 사용하며 별도 비밀번호 설정 스크립트를 추가하지 않습니다.
+
+`argocd` CLI가 있는 관리 터미널에서 아래 명령을 실행하고 비밀번호를 프롬프트에 입력합니다. 평문을 명령 인자나 shell history에 넣지 않습니다. 출력된 해시도 공유 로그에 남기지 않고 로컬 env 파일로 옮깁니다.
+
+```bash
+argocd account bcrypt
+```
+
+```dotenv
+# 실제 해시는 로컬 env.prod에만 입력합니다. $ 확장을 막기 위해 single quote를 사용합니다.
+ARGOCD_ADMIN_PASSWORD_HASH='<bcrypt 해시>'
+```
+
+공통 direnv loader가 이 값을 Terragrunt의 `admin_password_hash`로 전달하고 Terraform은 Helm의 `configs.secret.argocdServerAdminPassword`에 `set_sensitive`로 지정합니다. 빈 값 이외에는 bcrypt 형식을 검증하므로 평문이나 잘못된 해시는 plan 단계에서 거부됩니다. env 파일을 수정하는 것만으로 실행 중인 Argo 비밀번호가 바뀌지는 않습니다.
+
+앞의 native Terragrunt `init` → 저장 `plan` → 검토 → `apply` 절차를 사용합니다. 기존 Helm release의 비밀번호 설정 갱신과 등록 marker만 예상하고 release 재생성·다른 자원 변경이 있으면 중단합니다. 새 비밀번호로 `/argocd/`에 로그인하고 Application 목록·새로고침을 확인합니다. 변경 시 이전 비밀번호의 로그인이 거부되는지도 확인하되 비밀번호·JWT·Secret 본문은 기록하지 않습니다.
+
+한 번 지정한 뒤 값을 비우는 것은 비밀번호 초기화 방법이 아닙니다. 비밀번호를 다시 바꾸거나 되돌리려면 원하는 새 비밀번호의 해시 또는 이전에 보관한 해시를 명시하고 plan/apply합니다. 해시는 Terraform state·저장 plan·Helm release Secret에 보관되므로 기존 state 접근 제한과 private plan 권한을 유지합니다. `sensitive`는 출력 마스킹이며 저장 암호화를 대신하지 않습니다. 실제 env 파일과 해시를 Git·PR·QA raw에 포함하지 않습니다.
+
+클러스터나 실제 비밀번호 변경 없이 모듈 입력과 Helm 전달을 검증하려면 고정 Terraform 버전으로 실행합니다. 테스트는 mock Helm provider와 더미 해시로 plan만 수행합니다.
+
+```bash
+terraform -chdir=infra/terraform/modules/argocd-bootstrap init -backend=false -input=false
+terraform -chdir=infra/terraform/modules/argocd-bootstrap test
+```
+
 ## 프로젝트별 허용 범위
 
 | 프로젝트 | source/destination | 허용 리소스 |
