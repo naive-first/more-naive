@@ -17,3 +17,4 @@ spec:
         protocol: HTTP
       hosts:
         - {{ printf "more-naive-prod/%s" $host | quote }}
+        - {{ printf "%s/%s" .Release.Namespace $host | quote }}

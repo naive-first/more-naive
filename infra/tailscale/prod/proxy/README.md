@@ -2,7 +2,17 @@
 
 SSH 관리 진입점은 `study@more-naive-vm.tail373827.ts.net`(100.90.91.104)입니다. 실제 Ubuntu/k3s 노드 이름은 `more-naive-vm`입니다. VM에 설치하고 로그인한 Tailscale 노드는 별도 IP `100.90.159.52`와 DNS `more-naive-vm-1.tail373827.ts.net`을 받았습니다. HTTPS에는 인증된 노드의 실제 DNS를 사용합니다.
 
-경로는 tailnet 클라이언트 → Tailscale Serve HTTPS 443 → `127.0.0.1:18080` → Istio gateway Service:80 → Host가 일치하는 `/api/tests` backend입니다. Serve가 인증서를 관리하고 원래 Host를 전달합니다. gateway는 ClusterIP이며 Funnel·공인 LB·NodePort를 추가하지 않습니다.
+경로는 tailnet 클라이언트 → Tailscale Serve HTTPS 443 → `127.0.0.1:18080` → Istio gateway Service:80입니다. Serve가 인증서를 관리하고 원래 Host와 경로를 전달합니다. gateway는 ClusterIP이며 Funnel·공인 LB·NodePort를 추가하지 않습니다.
+
+| HTTPS 경로 | Istio 이후 목적지 |
+| --- | --- |
+| `/api/tests`, `/api/tests/` 하위 | backend:8080 |
+| `/argocd` | HTTPS `/argocd/`로 redirect |
+| `/argocd/` 하위 | argocd-server.argocd.svc.cluster.local:80 |
+
+브라우저 사용자는 관리자의 tailnet 초대·서비스 접근 허용·필요한 기기 승인을 받은 뒤 Tailscale에 연결합니다. Argo CD는 별도 로그인·역할 권한이 필요하며 SSH 터널은 사용하지 않습니다. SSH 진입점은 운영 관리용입니다.
+
+Argo 경로는 [GitOps 라우트와 native Terraform Helm 갱신](../../../argocd/README.md#tailnet의-argocd-경로-적용)이 모두 반영된 뒤 사용할 수 있습니다. 기존 `/api/tests` 전용 배포 상태와 구분합니다. 이 경로 추가를 위해 Serve 재설정, relay 포트 변경이나 새 hostname은 필요하지 않습니다.
 
 ## 설치와 적용
 
@@ -35,10 +45,11 @@ relay는 `kubectl port-forward --address=127.0.0.1`로만 바인딩합니다. �
 ```bash
 MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/proxy/inspect_proxy.sh
 curl --fail --silent --show-error --output /dev/null https://more-naive-vm-1.tail373827.ts.net/api/tests
+curl --fail --silent --show-error --output /dev/null https://more-naive-vm-1.tail373827.ts.net/argocd/
 bash -n infra/tailscale/prod/proxy/bootstrap.sh
 terraform fmt -check infra/terraform/modules/tailscale-proxy
 ```
 
-VM에서는 `systemctl is-active/is-enabled more-naive-gateway-relay.service`, loopback 18080 바인딩, `tailscale serve status --json`의 HTTPS 443 대상과 Funnel 비활성을 확인합니다. 전체 status·peer·kubeconfig·state 대신 필요한 필드만 기록합니다. 잘못된 Host와 API 밖 경로는 404여야 합니다. 실제 CRUD·backend/DB 재시작 영속성은 직접 만든 행만으로 검증하고 정리합니다. 운영 PVC 삭제·백업/복원은 수행하지 않습니다.
+VM에서는 `systemctl is-active/is-enabled more-naive-gateway-relay.service`, loopback 18080 바인딩, `tailscale serve status --json`의 HTTPS 443 대상과 Funnel 비활성을 확인합니다. 전체 status·peer·kubeconfig·state 대신 필요한 필드만 기록합니다. 잘못된 Host와 `/api/tests`·`/argocd/` 밖의 미등록 경로는 404여야 합니다. Argo UI·정적 파일·로그인·API 검증은 Argo CD 문서를 따릅니다. 실제 CRUD·backend/DB 재시작 영속성은 직접 만든 행만으로 검증하고 정리합니다. 운영 PVC 삭제·백업/복원은 수행하지 않습니다.
 
 [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)는 localhost HTTP upstream을 사용합니다. [kubectl port-forward](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port-forward/)는 선택한 Pod 종료 시 연결도 종료하므로 systemd 재시작을 사용합니다.

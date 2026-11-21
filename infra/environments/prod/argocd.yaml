@@ -11,8 +11,13 @@ server:
     enabled: false
 configs:
   cm:
+    url: https://more-naive-vm-1.tail373827.ts.net/argocd
     exec.enabled: false
     timeout.reconciliation: 120s
+  params:
+    server.insecure: true
+    server.rootpath: /argocd
+    server.basehref: /argocd
   rbac:
     policy.default: ''
     policy.csv: ''
