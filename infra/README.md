@@ -23,7 +23,24 @@ bootstrap은 `more-naive-prod` namespace만 `istio-injection=enabled`로 표시�
 
 VM의 인증된 Tailscale DNS는 `more-naive-vm-1.tail373827.ts.net`입니다. backend의 VirtualService는 `istio-system/more-naive-gateway`와 동일한 이 Host를 사용하고 `/api/tests`와 하위 경로만 backend:8080으로 전달합니다. Tailscale Serve의 TLS 종료와 loopback relay 구성은 `infra/tailscale/prod/proxy`에서 별도로 관리합니다.
 
-실제 DNS를 입력한 `istio-route.yaml` values와 `ingress-route.yaml` Application을 활성화했습니다. `infra/charts/istio-route`는 Host 누락·일반 공인 hostname을 거부합니다. Gateway는 prod namespace의 해당 Host VirtualService만 연결합니다. 이 선언의 sync와 실제 tailnet HTTPS 연결 검증은 각각 확인합니다.
+실제 DNS를 입력한 `istio-route.yaml` values와 `ingress-route.yaml` Application을 활성화했습니다. `infra/charts/istio-route`는 Host 누락·일반 공인 hostname을 거부합니다. Gateway는 `more-naive-prod`와 `istio-system` namespace의 해당 Host VirtualService만 연결합니다. 이 선언의 sync와 실제 tailnet HTTPS 연결 검증은 각각 확인합니다.
+
+| 경로 | VirtualService namespace/name | 내부 전달 |
+| --- | --- | --- |
+| `/api/tests`, `/api/tests/` 하위 | `more-naive-prod/backend` | `backend.more-naive-prod.svc.cluster.local:8080` |
+| `/argocd` | `istio-system/argocd` | 동일 Host의 HTTPS `/argocd/`로 308 redirect |
+| `/argocd/` 하위 | `istio-system/argocd` | `argocd-server.argocd.svc.cluster.local:80`, prefix 유지 |
+
+Argo CD VirtualService는 기존 `ingress-route` Application의 chart에 속합니다. platform AppProject에는 기존 `istio-system` destination에서 VirtualService를 관리할 권한만 추가합니다. `argocd` namespace를 destination에 추가하거나 wildcard Host를 허용하지 않습니다. `/argocd-other`와 그 밖의 미등록 경로는 404입니다. 라우트의 Host는 Gateway와 동일한 prod values를 사용하며 다른 namespace에서 연결할 수 없습니다.
+
+Argo CD 자체의 rootpath/basehref/HTTP 설정은 Terraform Helm provider가 소유합니다. GitOps 라우트만 먼저 반영돼도 UI가 동작하지 않을 수 있으므로 [Argo CD 적용 순서](argocd/README.md#tailnet의-argocd-경로-적용)를 따릅니다. 기존 Serve443·loopback18080·인증서·Funnel 비활성은 유지합니다.
+
+저장소 루트에서 고정 Helm 4.3.2로 라우트를 검증합니다. 두 명령은 로컬 렌더링이며 클러스터를 변경하지 않습니다. 실제 반영은 `ingress-route`의 main 자동 sync가 담당합니다.
+
+```bash
+helm lint infra/charts/istio-route --namespace istio-system --values infra/environments/prod/istio-route.yaml
+helm template more-naive-gateway infra/charts/istio-route --namespace istio-system --values infra/environments/prod/istio-route.yaml
+```
 
 검증 순서는 CRD/istiod→gateway Deployment Ready·Service endpoints→Host 일치와 Istio 분석→proxy 사설 upstream→tailnet HTTPS→CRUD입니다. 앞 단계만 통과하면 gateway 준비까지만 기록합니다. 장애 시 먼저 endpoint와 포트·Host·VirtualService destination을 확인하고, 이전 호환 Git 설정을 재적용합니다. public 우회 경로나 기존 Serve 서비스 재설정으로 복구하지 않습니다.
 

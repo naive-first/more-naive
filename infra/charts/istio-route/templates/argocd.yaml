@@ -1,0 +1,32 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: argocd
+  namespace: {{ .Release.Namespace }}
+spec:
+  hosts:
+    - {{ .Values.host | quote }}
+  gateways:
+    - more-naive-gateway
+  http:
+    - name: argocd-trailing-slash
+      match:
+        - uri:
+            exact: /argocd
+      redirect:
+        uri: /argocd/
+        scheme: https
+        redirectCode: 308
+    - name: argocd
+      match:
+        - uri:
+            prefix: /argocd/
+      headers:
+        request:
+          set:
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: argocd-server.argocd.svc.cluster.local
+            port:
+              number: 80

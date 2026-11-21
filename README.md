@@ -6,7 +6,7 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 
 ## 실행 문서
 
-prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM Tailscale 설치·로그인을 완료하고 `https://more-naive-vm-1.tail373827.ts.net/api/tests`에서 인증서 검증을 포함한 HTTP 200과 잘못된 Host/API 밖 경로의 404를 확인했습니다. CRUD·재시작 영속성은 아래 smoke로 별도 검증합니다.
+prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM Tailscale 설치·로그인을 완료하고 `https://more-naive-vm-1.tail373827.ts.net/api/tests`에서 인증서 검증을 포함한 HTTP 200과 잘못된 Host/허용하지 않은 경로의 404를 확인했습니다. CRUD·재시작 영속성은 아래 smoke로 별도 검증합니다.
 
 | 작업 | 정본 문서 |
 | --- | --- |
@@ -21,6 +21,35 @@ prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM 
 | Istio·gateway·prod 배포 | [infra](infra/README.md) |
 | 앱/DB 설정 외부 주입 | [Secret/ConfigMap](infra/secrets/prod/README.md) |
 | PostgreSQL prod values·PVC | [prod DB](infra/environments/prod/README.md) |
+
+## Argo CD·API에 접속하기
+
+**먼저 관리자에게 Tailscale 접근 권한을 받고, 승인된 계정으로 Tailscale에 연결해야 합니다.** 아래 주소는 Tailscale 사설 네트워크(tailnet) 안에서 사용하며 공인 인터넷에는 열지 않습니다.
+
+1. 프로젝트 관리자에게 사용할 계정을 알려 주고 tailnet 초대와 대상 HTTPS 서비스 접근 허용을 요청합니다. 기기 승인이 필요한 경우 승인까지 받습니다.
+2. 내 PC에 Tailscale 클라이언트를 설치하고 초대받은 계정으로 로그인한 뒤 해당 tailnet에 연결합니다. CLI 환경에서는 `tailscale status`로 연결 상태를 확인합니다.
+3. Argo CD 사용자는 별도로 로그인 계정과 필요한 역할 권한을 전달받습니다. Tailscale 연결만으로 Argo CD 권한이 부여되지는 않습니다. 일반 UI 사용에는 VM SSH·sudo 권한이나 SSH 터널이 필요하지 않습니다.
+
+| 서비스 | 브라우저 주소 | 동작 |
+| --- | --- | --- |
+| API | `https://more-naive-vm-1.tail373827.ts.net/api/tests` | 읽기 전용 목록 조회, HTTP 200과 JSON 배열. 빈 목록은 `[]` |
+| Argo CD | `https://more-naive-vm-1.tail373827.ts.net/argocd/` | Argo CD 로그인 화면. `/argocd`는 끝에 `/`가 붙은 주소로 이동 |
+
+**운영 반영 전 주의:** 기존 배포에는 `/api/tests`만 연결돼 있어 `/argocd/`는 404입니다. Argo CD 주소는 이 변경의 GitOps 라우트 반영과 [native Terraform Helm 갱신](infra/argocd/README.md#tailnet의-argocd-경로-적용)이 모두 끝난 뒤 사용합니다. 선언 파일 추가만으로 운영 UI가 열렸다고 판단하지 않습니다.
+
+```bash
+curl --fail --silent --show-error \
+  https://more-naive-vm-1.tail373827.ts.net/api/tests
+```
+
+API 상세 조회는 `/api/tests/{id}`이며 쓰기 요청은 [backend API 문서](backend/README.md)를 따릅니다. 관리용 SSH DNS `more-naive-vm.tail373827.ts.net`과 서비스 DNS `more-naive-vm-1.tail373827.ts.net`을 구분합니다. 비밀번호·개인키·로그인 토큰을 README나 PR에 적지 않습니다.
+
+| 접속 문제 | 확인할 항목 |
+| --- | --- |
+| DNS 조회 실패·시간 초과 | Tailscale 연결, 올바른 tailnet, 기기 승인, 대상 HTTPS 서비스 접근 정책 |
+| API 인증서 오류·404 | 서비스 DNS와 `/api/tests` 경로. TLS 검증을 끄지 않고 [proxy 운영 문서](infra/tailscale/prod/proxy/README.md)에 따라 점검 |
+| Argo CD 404·반복 redirect·정적 파일 오류 | 라우트와 Argo Helm subpath 설정의 적용 여부를 [Argo CD 운영 문서](infra/argocd/README.md)에서 확인 |
+| Argo CD 로그인·조회 거부 | 관리자에게 Argo CD 계정·역할 권한 확인 요청 |
 
 ## local 검증과 prod 구축
 
