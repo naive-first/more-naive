@@ -14,6 +14,8 @@ MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terrag
 
 표준 도구가 선택 파일의 환경을 전달합니다. 실제 앱 컨테이너·Kubernetes 리소스·Terraform 변수는 각 native 설정에서 필요한 키를 명시합니다. 필수값·prod 대상·hostname/API 주소·SSH trust는 해당 도구의 사전 검증과 HCL validation으로 확인합니다. `env`, credential 파일, Secret payload, plan/state 전체를 공유 로그에 출력하지 않습니다.
 
+Argo CD 관리자 비밀번호는 선택 키 `ARGOCD_ADMIN_PASSWORD_HASH`로 전달합니다. 두 env 파일의 키 이름은 같고 bcrypt 해시를 single quote로 감쌉니다. 실제 prod 반영·비밀번호 변경과 private state 취급은 [Argo CD 운영 문서](../infra/argocd/README.md#env에서-admin-비밀번호-설정)를 따릅니다.
+
 ## RustFS 인증과 state
 
 bootstrap은 `RUSTFS_ADMIN_ACCESS_KEY`/`RUSTFS_ADMIN_SECRET_KEY`를 native Terraform 환경변수로 전달합니다. Terraform의 Docker 자원 state에는 관리 인증이 들어가므로 기존 고정 local state와 상위 0700·파일 0600을 유지합니다. 자신의 state를 RustFS로 이전하지 않습니다.

@@ -12,9 +12,10 @@ terraform {
   }
 }
 inputs = {
-  context          = get_env("KUBE_CONTEXT")
-  expected_server  = get_env("KUBE_SERVER")
-  kubeconfig       = get_env("KUBECONFIG", "${get_env("HOME")}/.kube/config")
-  values_file      = "${get_repo_root()}/infra/environments/prod/argocd.yaml"
-  bootstrap_script = "${get_repo_root()}/infra/argocd/bootstrap/bootstrap.sh"
+  context             = get_env("KUBE_CONTEXT")
+  expected_server     = get_env("KUBE_SERVER")
+  kubeconfig          = get_env("KUBECONFIG", "${get_env("HOME")}/.kube/config")
+  values_file         = "${get_repo_root()}/infra/environments/prod/argocd.yaml"
+  admin_password_hash = get_env("ARGOCD_ADMIN_PASSWORD_HASH", "")
+  bootstrap_script    = "${get_repo_root()}/infra/argocd/bootstrap/bootstrap.sh"
 }

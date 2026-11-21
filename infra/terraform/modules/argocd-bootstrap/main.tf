@@ -26,6 +26,11 @@ resource "helm_release" "argocd" {
   timeout          = 600
   replace          = false
   values           = [file(var.values_file)]
+  set_sensitive = var.admin_password_hash == "" ? [] : [{
+    name  = "configs.secret.argocdServerAdminPassword"
+    value = var.admin_password_hash
+    type  = "string"
+  }]
 }
 
 resource "terraform_data" "registration" {

@@ -35,7 +35,7 @@ prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM 
 | API | `https://more-naive-vm-1.tail373827.ts.net/api/tests` | 읽기 전용 목록 조회, HTTP 200과 JSON 배열. 빈 목록은 `[]` |
 | Argo CD | `https://more-naive-vm-1.tail373827.ts.net/argocd/` | Argo CD 로그인 화면. `/argocd`는 끝에 `/`가 붙은 주소로 이동 |
 
-**운영 반영 전 주의:** 기존 배포에는 `/api/tests`만 연결돼 있어 `/argocd/`는 404입니다. Argo CD 주소는 이 변경의 GitOps 라우트 반영과 [native Terraform Helm 갱신](infra/argocd/README.md#tailnet의-argocd-경로-적용)이 모두 끝난 뒤 사용합니다. 선언 파일 추가만으로 운영 UI가 열렸다고 판단하지 않습니다.
+Argo CD의 GitOps 라우트와 native Terraform Helm subpath 설정은 운영에 반영했습니다. 관리자 비밀번호는 [env 설정 절차](infra/argocd/README.md#env에서-admin-비밀번호-설정)를 따릅니다. env 값을 바꾼 뒤에는 native plan 검토와 apply가 필요합니다.
 
 ```bash
 curl --fail --silent --show-error \
