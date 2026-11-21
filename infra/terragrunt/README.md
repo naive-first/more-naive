@@ -9,3 +9,5 @@ Terraform CLI 1.17.2를 Terragrunt 1.2.2의 native `run`으로 실행합니다. 
 RustFS health·버킷/최소 권한·native 잠금/장애 중단을 확인한 뒤 #8에서 prod unit을 연결합니다. backend 인증과 provider 인증을 구분하며 state·plan을 Git에 넣지 않습니다. 초기화 실패 시 endpoint와 인증·버전부터 확인하고 기존 state 경로/lineage를 점검합니다. bootstrap local state를 RustFS로 이전하지 않습니다.
 
 권한은 해당 공급자 API·RustFS state용 권한으로 분리합니다. 재실행은 같은 unit/backend에서 수행합니다. 삭제는 plan의 대상 자원을 먼저 검토하며 RustFS bootstrap/데이터는 일반 prod destroy에 포함하지 않습니다. 백업/복원 설정은 범위 밖입니다.
+
+버킷/최소 권한·선택적 backend와 잠금/장애 검증은 [state backend](state-README.md), 고정 local state와 영속 컨테이너는 [RustFS bootstrap](bootstrap/rustfs/README.md)을 따릅니다.

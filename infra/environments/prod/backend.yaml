@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
   repository: ghcr.io/naive-first/more-naive-backend
-  digest: sha256:4f4bbfbf5e4aedf108a01815085d9bc8586b6f045f98135b46f79e3f4e2299ca
+  digest: sha256:e74d9aa051f0c4dfb31d0dcd05775cbd64294e34157988c63508e30f63058974
 resources:
   requests:
     cpu: 100m
@@ -10,7 +10,7 @@ resources:
     cpu: '1'
     memory: 768Mi
 routing:
-  enabled: false
-  host: ''
+  enabled: true
+  host: more-naive-vm-1.tail373827.ts.net
   createGateway: false
   gateway: istio-system/more-naive-gateway

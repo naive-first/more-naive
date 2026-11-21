@@ -1,0 +1,19 @@
+{{- $host := required "confirmed tailnet HTTPS host is required" .Values.host -}}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\\.ts\\.net$" $host) -}}
+{{- fail "host must be a confirmed tailnet .ts.net hostname" -}}
+{{- end }}
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: more-naive-gateway
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - {{ printf "more-naive-prod/%s" $host | quote }}
