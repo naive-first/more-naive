@@ -6,7 +6,7 @@ PostgreSQL `test` 테이블의 생성·조회·수정·삭제를 확인하는 �
 
 ## 실행 문서
 
-prod k3s·Argo CD·PostgreSQL·backend와 내부 Istio gateway를 배포했고 내부 CRUD를 검증했습니다. tailnet HTTPS·재시작 영속성 검증은 실제 Tailscale 장비의 접속 정보를 기다립니다.
+prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. VM Tailscale 설치·로그인을 완료하고 `https://more-naive-vm-1.tail373827.ts.net/api/tests`에서 인증서 검증을 포함한 HTTP 200과 잘못된 Host/API 밖 경로의 404를 확인했습니다. CRUD·재시작 영속성은 아래 smoke로 별도 검증합니다.
 
 | 작업 | 정본 문서 |
 | --- | --- |
@@ -40,7 +40,7 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/smoke.sh
 
 실제 대상과 영향을 확인한 후 `--allow-write`를 추가하면 직접 만든 두 행으로 생성→조회→수정→삭제/404를 확인하고 직접 만든 행만 정리합니다. `--restart-backend` 또는 `--restart-db`를 추가하면 해당 workload만 rollout restart하고 저장값을 재조회합니다. PVC 삭제·전체 테이블 정리·백업/복원은 실행하지 않습니다. 정리에 실패하면 출력한 도구 소유 row ID만 확인합니다.
 
-실제 prod HTTPS 읽기 probe는 TLS handshake 단계에서 실패했습니다. SSH 목적지 Ubuntu에는 Tailscale이 없어 실제 Serve 소유 장비를 확인한 뒤 HTTPS CRUD/Pod 재시작을 검증해야 합니다. 이전 호환 digest/config를 Git revert하는 복구와 DB 데이터 복원을 혼동하지 않습니다. 설치/삭제·state/PVC 영향과 실패 진단은 각 정본 문서에서 확인합니다.
+기존 관리 진입 DNS와 HTTPS 서비스 DNS는 다릅니다. 실제 로그인된 VM의 `PROXY_HTTPS_HOSTNAME=more-naive-vm-1.tail373827.ts.net`을 사용합니다. HTTPS는 Serve→loopback relay→Istio로 연결하며 [설치·plan·apply와 확인](infra/tailscale/prod/proxy/README.md)을 따릅니다. 이전 호환 digest/config를 Git revert하는 복구와 DB 데이터 복원을 혼동하지 않습니다. 설치/삭제·state/PVC 영향과 실패 진단은 각 정본 문서에서 확인합니다.
 
 ### smoke 확인 절차
 
