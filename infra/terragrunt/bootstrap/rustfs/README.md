@@ -37,10 +37,10 @@ terraform -chdir=infra/terraform/modules/rustfs fmt -check
 terraform -chdir=infra/terraform/modules/rustfs init -backend=false -input=false
 terraform -chdir=infra/terraform/modules/rustfs validate
 terragrunt hcl fmt --check --working-dir infra/terragrunt/bootstrap/rustfs
-uv run --with boto3==1.42.65 python infra/terragrunt/bootstrap/rustfs/verify_bootstrap.py
+curl --fail --silent --show-error http://127.0.0.1:9000/health
 ```
 
-검증 스크립트는 이름·포트·data/state 경로와 임시 인증을 새로 만들어 자신의 컨테이너만 변경합니다. 2026-11-14 로컬 Docker 29.9.3에서 S3 객체 재시작 보존·컨테이너 재생성 보존·별도 cache의 동일 local state·dev 거부 4건을 확인했습니다. 실제 prod 검증은 별도입니다. 버킷 최소 권한과 native state lock 검증은 #4/#40이 추가합니다.
+위 명령은 Terraform 모듈·Terragrunt 구성과 실제 관리 호스트의 health를 확인합니다. 재실행할 때는 같은 `env.prod`와 고정 local state 경로를 사용해 앞 절의 init·plan을 실행하고, 변경 계획과 data 디렉터리 UID·권한을 확인합니다. 명령 예시만으로 실제 prod 적용이나 영속성 확인을 완료했다고 기록하지 않습니다. 버킷 최소 권한은 #4, 잠금·저장소 장애·컨테이너 재생성 후 동일 state 재조회는 #40의 수동 절차와 실제 수행 기록으로 확인합니다.
 
 health 실패 시 data 디렉터리 UID/권한, loopback 포트 충돌, Docker 상태를 확인합니다. 인증을 출력하는 `docker inspect` 전체 출력이나 `terraform show`를 공유하지 않습니다. 같은 입력으로 apply하면 현재 컨테이너를 확인하며, 이미지나 환경 변경 시 컨테이너를 교체할 수 있습니다. bind mount 데이터는 교체 후 유지됩니다.
 

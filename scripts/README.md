@@ -28,4 +28,4 @@ MORE_NAIVE_ENV=prod direnv exec "$REPO_ROOT/config/env" terragrunt run -- init -
 MORE_NAIVE_ENV=prod direnv exec "$REPO_ROOT/config/env" terragrunt run -- plan -input=false
 ```
 
-위 명령은 검토한 prod unit 디렉터리에서 실행합니다. 사전 검증·Secret 주입·등록·smoke는 각 정본 문서의 native CLI를 따릅니다. Python 파일은 `test_*.py`와 격리 Docker/S3 fixture 등 QA 전용에만 사용합니다.
+위 명령은 검토한 prod unit 디렉터리에서 실행합니다. 사전 검증·Secret 주입·등록·smoke는 각 정본 문서의 native CLI를 따릅니다. 이 저장소에는 QA를 포함해 Python 스크립트와 uv·boto3 실행 의존성을 추가하지 않습니다. 필요한 확인은 Terraform/Terragrunt·kubectl/Helm 명령과 README의 수동 절차로 수행하고, 실제 수행 결과만 해당 PR 코멘트에 남깁니다.
