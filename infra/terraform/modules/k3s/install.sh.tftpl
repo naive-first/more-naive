@@ -7,6 +7,20 @@ trap 'rm -rf "$staging"' EXIT
 [ "$(hostname)" = '${node}' ] || { echo 'remote hostname mismatch' >&2; exit 1; }
 directory=/etc/rancher/k3s
 printf '%s' '${config_base64}' | base64 -d > "$staging/config.yaml"
+
+config_matches() {
+  cmp -s "$staging/config.yaml" "$directory/config.yaml" && return 0
+%{ if node == "more-naive-vm" && role == "server" ~}
+  # 기존 prod 파일은 문자열 따옴표와 YAML 목록 들여쓰기가 다르다.
+  sed -e 's/^node-name: "more-naive-vm"$/node-name: more-naive-vm/' \
+    -e "s/^write-kubeconfig-mode: \"0600\"$/write-kubeconfig-mode: '0600'/" \
+    -e 's/^  - /- /' "$staging/config.yaml" > "$staging/legacy-config.yaml" &&
+    cmp -s "$staging/legacy-config.yaml" "$directory/config.yaml"
+%{ else ~}
+  return 1
+%{ endif ~}
+}
+
 %{ if tls_san != "" ~}
 tls_dropin="$directory/config.yaml.d/60-tailnet-tls.yaml"
 printf 'tls-san+:\n  - %s\n' '${tls_san}' > "$staging/60-tailnet-tls.yaml"
@@ -36,7 +50,7 @@ if [ -e /usr/local/bin/k3s ]; then
   /usr/local/bin/k3s --version | head -n 1 | grep -F 'k3s version ${version} ' >/dev/null || {
     echo 'existing k3s version differs; explicit upgrade required' >&2; exit 1;
   }
-  cmp -s "$staging/config.yaml" "$directory/config.yaml" && cmp -s "$staging/token" "$directory/more-naive-token" || {
+  config_matches && cmp -s "$staging/token" "$directory/more-naive-token" || {
     echo 'existing config or token differs; review before changes' >&2; exit 1;
   }
   systemctl is-active --quiet '${role == "server" ? "k3s" : "k3s-agent"}'
