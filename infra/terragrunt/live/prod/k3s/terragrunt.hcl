@@ -23,4 +23,5 @@ inputs = {
   node             = get_env("K3S_NODE_NAME")
   role             = get_env("K3S_ROLE")
   server_url       = get_env("K3S_SERVER_URL", "")
+  tls_san          = get_env("K3S_ROLE") == "server" ? yamldecode(file("${get_repo_root()}/infra/environments/prod/istio-route.yaml")).host : ""
 }

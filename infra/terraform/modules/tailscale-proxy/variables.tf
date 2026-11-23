@@ -24,11 +24,11 @@ variable "node" {
     error_message = "The actual OS hostname is required."
   }
 }
-variable "https_hostname" {
+variable "gateway_host" {
   type = string
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9.-]*\\.ts\\.net$", var.https_hostname))
-    error_message = "The authenticated node DNS hostname is required."
+    condition     = can(regex("^[a-z0-9][a-z0-9.-]*\\.ts\\.net$", var.gateway_host))
+    error_message = "The Istio gateway Host must be a tailnet DNS name."
   }
 }
 variable "proxy_directory" { type = string }

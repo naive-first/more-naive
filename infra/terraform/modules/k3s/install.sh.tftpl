@@ -7,6 +7,31 @@ trap 'rm -rf "$staging"' EXIT
 [ "$(hostname)" = '${node}' ] || { echo 'remote hostname mismatch' >&2; exit 1; }
 directory=/etc/rancher/k3s
 printf '%s' '${config_base64}' | base64 -d > "$staging/config.yaml"
+%{ if tls_san != "" ~}
+tls_dropin="$directory/config.yaml.d/60-tailnet-tls.yaml"
+printf 'tls-san+:\n  - %s\n' '${tls_san}' > "$staging/60-tailnet-tls.yaml"
+
+install_tls_dropin() {
+  mkdir -p "$(dirname "$tls_dropin")"
+  pending_dropin=$(mktemp "$tls_dropin.XXXXXX")
+  install -m 600 "$staging/60-tailnet-tls.yaml" "$pending_dropin"
+  mv -f "$pending_dropin" "$tls_dropin"
+}
+
+verify_tls_san() {
+  for attempt in $(seq 1 30); do
+    if timeout 3s openssl s_client -connect 127.0.0.1:6443 -servername '${tls_san}' \
+      -verify_hostname '${tls_san}' -verify_return_error \
+      -CAfile /var/lib/rancher/k3s/server/tls/server-ca.crt </dev/null >/dev/null 2>&1; then
+      echo 'k3s serving certificate verified with configured TLS SAN'
+      return 0
+    fi
+    sleep 2
+  done
+  echo 'k3s serving certificate did not verify with configured TLS SAN' >&2
+  return 1
+}
+%{ endif ~}
 if [ -e /usr/local/bin/k3s ]; then
   /usr/local/bin/k3s --version | head -n 1 | grep -F 'k3s version ${version} ' >/dev/null || {
     echo 'existing k3s version differs; explicit upgrade required' >&2; exit 1;
@@ -15,7 +40,15 @@ if [ -e /usr/local/bin/k3s ]; then
     echo 'existing config or token differs; review before changes' >&2; exit 1;
   }
   systemctl is-active --quiet '${role == "server" ? "k3s" : "k3s-agent"}'
-  echo 'existing pinned installation active; no changes'
+%{ if tls_san != "" ~}
+  if ! cmp -s "$staging/60-tailnet-tls.yaml" "$tls_dropin"; then
+    install_tls_dropin
+    systemctl restart k3s
+    echo 'k3s restarted for TLS SAN configuration'
+  fi
+  verify_tls_san
+%{ endif ~}
+  echo 'existing pinned installation active'
   exit 0
 fi
 [ ! -e "$directory/config.yaml" ] && [ ! -e "$directory/more-naive-token" ] || {
@@ -27,5 +60,11 @@ printf '%s  %s\n' '8598e002e61d658fed7b7542fc6d2c66d8da6eae69e088830105d2ee1ffb6
 mkdir -p "$directory"
 install -m 600 "$staging/config.yaml" "$directory/config.yaml"
 install -m 600 "$staging/token" "$directory/more-naive-token"
+%{ if tls_san != "" ~}
+install_tls_dropin
+%{ endif ~}
 INSTALL_K3S_VERSION='${version}' INSTALL_K3S_EXEC='${role}' sh "$staging/installer"
+%{ if tls_san != "" ~}
+verify_tls_san
+%{ endif ~}
 echo 'pinned installation completed'
