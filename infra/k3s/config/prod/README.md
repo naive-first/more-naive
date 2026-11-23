@@ -4,7 +4,9 @@
 
 [공식 k3s server 옵션](https://docs.k3s.io/cli/server)에 따라 Traefik과 ServiceLB만 비활성화합니다. Istio 사설 gateway 경로를 따로 준비하며 CNI·CoreDNS·network policy는 유지합니다. 실제 `/etc/rancher/k3s/config.yaml`과 token-file은 #9 도구가 0600으로 생성하므로 예시 파일을 별도로 덮어쓰지 않습니다.
 
-운영자가 #37의 허용 OS 사용자·Tailscale SSH·sudo를 확인한 뒤 #9의 native Terraform init → plan 검토 → 저장 plan apply 절차를 실행합니다. 이후 외부에 보관한 kubeconfig의 context 이름·API server 주소·노드 목록을 실제 cluster와 대조합니다. kubeconfig 전체나 토큰을 PR/로그로 출력하지 않습니다. 운영 context는 `more-naive-prod`를 명시하고 `env.prod`의 `KUBE_CONTEXT`·`KUBE_SERVER`와 각 실제 node 이름을 대조합니다.
+운영자가 허용 OS 사용자·SSH host key·sudo를 확인한 뒤 native Terraform init → plan 검토 → 저장 plan apply 절차를 실행합니다. prod 서버의 `/etc/rancher/k3s/config.yaml.d/60-tailnet-tls.yaml`은 Istio prod values의 Host를 `tls-san+`으로 추가합니다. 신규 설치는 기동 전에 이 파일을 준비합니다. 기존 설치는 기본 config와 token이 일치하는 경우에만 진행하며 SAN 파일이 달라졌을 때만 k3s를 재시작합니다. 프로비저닝이 k3s 서버 CA로 설정된 이름의 인증서를 확인합니다. [k3s drop-in 문서](https://docs.k3s.io/installation/configuration)
+
+운영 context는 `more-naive-prod`를 사용합니다. 외부에 보관한 kubeconfig의 기존 k3s CA와 클라이언트 자격 증명은 유지하고 서버를 `https://more-naive-vm.tail373827.ts.net:6443`으로 설정합니다. `env.prod`의 `KUBE_SERVER`에도 같은 주소를 사용합니다. kubeconfig 전체나 토큰을 PR이나 로그에 출력하지 않습니다.
 
 ```bash
 MORE_NAIVE_ENV=prod direnv exec config/env bash infra/k3s/scripts/verify.sh \

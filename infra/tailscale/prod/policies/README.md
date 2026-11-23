@@ -4,9 +4,9 @@
 
 | 경계 | 확인할 입력·완료 기준 |
 | --- | --- |
-| 네트워크 접근 | 실제 운영자 identity/group → 실제 prod node tag/IP의 SSH 트래픽만 허용. 공인 SSH와 광범위 전체 포트 허용은 추가하지 않음 |
+| 네트워크 접근 | 실제 운영자 identity/group → Proxmox의 prod tailnet 주소에서 필요한 SSH·API 6443 허용. 사용자 그룹에는 필요한 HTTPS 443 허용 |
 | Tailscale SSH | 실제 source identity/group, 실제 node destination, 허용 OS 사용자 `study` 등, check/accept 방식과 필요한 재인증 정책을 관리자가 결정 |
-| 태그 소유권 | join key에 부여할 실제 태그와 태그 소유자 확인. 기존 다른 노드 태그를 대체하지 않음 |
+| 태그 소유권 | Proxmox 게이트웨이의 기존 태그와 태그 소유자를 확인 |
 | 거부 검증 | 비허용 테스트 주체/OS 사용자로 접속 거부를 실제 확인. 테스트 identity를 임의로 만들거나 현재 사용자 권한을 바꾸지 않음 |
 
 [Tailscale SSH 문서](https://tailscale.com/docs/features/tailscale-ssh)의 네트워크 허용과 SSH 권한 요구를 함께 확인합니다. SSH를 켠 것만으로 허용 정책 검증을 대신하지 않습니다. 실제 원본 정책과 관리 승인이 없으므로 적용된 ACL·SSH 규칙을 이 저장소가 소유한다고 주장하지 않습니다.

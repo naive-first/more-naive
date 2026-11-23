@@ -37,7 +37,7 @@ resource "terraform_data" "installation" {
   }
   provisioner "file" {
     content = templatefile("${path.module}/install.sh.tftpl", {
-      node = var.node, role = var.role, version = local.version, config_base64 = base64encode(local.config)
+      node = var.node, role = var.role, version = local.version, config_base64 = base64encode(local.config), tls_san = var.tls_san
     })
     destination = ".more-naive-k3s-${self.id}/install.sh"
   }

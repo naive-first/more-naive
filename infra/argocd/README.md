@@ -23,22 +23,24 @@ server Service는 ClusterIP이며 Kubernetes Ingress/공인 포트를 생성하�
 
 ## tailnet의 Argo CD 경로 적용
 
-목표 URL은 `https://more-naive-vm-1.tail373827.ts.net/argocd/`입니다. 사용자는 관리자에게 tailnet 초대·기기 승인·HTTPS 서비스 접근 허용과 별도의 Argo CD 계정·역할을 받은 뒤 브라우저로 접속합니다. SSH 터널은 UI 사용에 필요하지 않습니다. 이 변경 전 운영 배포는 `/api/tests`만 연결돼 있으므로 `/argocd/`의 404가 기존 상태입니다. 아래 두 소유자의 설정을 모두 적용하고 검증하기 전까지 UI 개통 완료로 기록하지 않습니다.
+운영 URL은 `https://more-naive-vm.tail373827.ts.net/argocd/`입니다. 사용자는 관리자에게 tailnet 초대·기기 승인·HTTPS 서비스 접근 허용과 별도의 Argo CD 계정·역할을 받은 뒤 브라우저로 접속합니다. SSH 터널은 UI 사용에 필요하지 않습니다. GitOps 라우트와 Helm URL을 함께 동기화합니다.
 
 | 설정 | 소유자 | 적용 값 |
 | --- | --- | --- |
-| TLS 종료 | 기존 Tailscale Serve | HTTPS 443, 기존 인증서와 Host 유지 |
+| TLS 종료 | Proxmox Tailscale 게이트웨이 | HTTPS 443 → VM 172.30.104.10:18080, 원래 Host 유지 |
 | Gateway·Argo VirtualService | `ingress-route` GitOps Application | 동일 Host의 `/argocd/` → `argocd-server.argocd.svc.cluster.local:80` |
 | Argo 서버 subpath | native Terraform의 `helm_release.argocd` | `configs.params.server.rootpath=/argocd`, `server.basehref=/argocd` |
 | 내부 upstream 프로토콜 | 같은 Helm values | `configs.params.server.insecure=true`로 HTTP 사용, 외부 TLS는 유지 |
-| 외부 URL | 같은 Helm values | `configs.cm.url=https://more-naive-vm-1.tail373827.ts.net/argocd` |
+| 외부 URL | 같은 Helm values | `configs.cm.url=https://more-naive-vm.tail373827.ts.net/argocd` |
 
 VirtualService는 prefix를 제거하지 않습니다. 정확히 `/argocd`인 요청만 HTTPS `/argocd/`로 308 redirect하고, `/argocd/` 하위를 UI·정적 파일·Argo API에 그대로 전달합니다. Gateway는 `more-naive-prod`와 `istio-system` namespace의 명시한 Host만 허용합니다. platform 프로젝트도 기존 `istio-system` destination에서 VirtualService만 추가 허용합니다. Argo Service 자체나 Helm release를 GitOps Application으로 옮기지 않습니다. [공식 Istio/subpath 안내](https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#istio)를 따릅니다.
 
 1. 변경을 main에 반영한 뒤 `more-naive-projects`와 `ingress-route` Application의 Synced/Healthy를 확인합니다. main의 GitOps 선언을 임시 kubectl patch로 대체하지 않습니다.
-2. 운영 kubeconfig·승인된 환경 loader·RustFS state 접근을 준비하고 이 문서 앞의 native Terragrunt `init` → 저장 `plan` → 검토 후 `apply`를 실행합니다. 기존 SSH 기반 Kubernetes API 관리 연결은 이 작업에만 필요합니다. 일반 브라우저 사용과 구분합니다.
-3. plan에서 기존 `helm_release.argocd`의 values 갱신과 bootstrap 등록만 예상합니다. destroy/recreate, DB/PVC/state·Serve 변경이 있으면 적용을 중단합니다. private plan/state 내용과 자격 증명은 로그로 출력하지 않습니다.
+2. 운영 kubeconfig·승인된 환경 loader·RustFS state 접근을 준비하고 이 문서 앞의 native Terragrunt `init` → 저장 `plan` → 검토 후 `apply`를 실행합니다. kubeconfig는 `https://more-naive-vm.tail373827.ts.net:6443`과 기존 k3s CA를 사용합니다.
+3. plan에서 기존 `helm_release.argocd`의 values 갱신과 bootstrap 등록만 예상합니다. destroy/recreate, DB/PVC/state 변경이 있으면 적용을 중단합니다. private plan/state 내용과 자격 증명은 로그로 출력하지 않습니다.
 4. Helm wait와 bootstrap 완료 뒤 아래 상태·접속 검증을 수행합니다. values 파일의 Git merge만으로 Helm release가 자동 갱신되지는 않습니다.
+
+게이트웨이 전환 중에 임시 override를 적용한 클러스터에서는 Git main의 두 prod values와 실제 `argocd-cm` URL이 모두 새 주소인지 확인합니다. 두 자식 Application의 `status.sync.revisions`에서 새 values가 포함된 Git 리비전을 확인한 뒤 정리합니다. `more-naive-prod` 부모 Application에서 `ingress-route`의 `host`와 `backend`의 `routing.host` 파라미터를 대상으로 하는 두 `ignoreDifferences` 항목만 제거합니다. 다른 무시 규칙이 `RespectIgnoreDifferences=true`를 사용하면 해당 옵션을 유지합니다. 그 다음 자식 Application의 해당 Helm 파라미터만 제거하고 세 Application이 다시 Synced·Healthy인지 확인합니다. `istio-base`와 `istiod`의 webhook 무시 규칙은 각 Application이 관리합니다.
 
 ```bash
 kubectl --context "$KUBE_CONTEXT" -n argocd rollout status deployment/argocd-server --timeout=300s
@@ -55,11 +57,11 @@ Tailscale에 연결한 클라이언트에서 TLS 검증을 켠 채 실행합니�
 ```bash
 curl --fail --silent --show-error --location --max-redirs 3 \
   --output /dev/null --write-out '%{http_code} %{url_effective}\n' \
-  https://more-naive-vm-1.tail373827.ts.net/argocd
+  https://more-naive-vm.tail373827.ts.net/argocd
 curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  https://more-naive-vm-1.tail373827.ts.net/argocd/api/v1/settings
+  https://more-naive-vm.tail373827.ts.net/argocd/api/v1/settings
 curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  https://more-naive-vm-1.tail373827.ts.net/api/tests
+  https://more-naive-vm.tail373827.ts.net/api/tests
 ```
 
 브라우저에서 `/argocd/`를 열고 개발자 도구 Network에서 JavaScript·CSS가 `/argocd/` 아래의 URL로 200을 받는지 확인합니다. 승인된 계정으로 로그인한 뒤 Application 목록·상세를 열고 새로고침합니다. 로그인 화면 재등장, `/api/v1/...` 루트로 빠지는 요청, 정적 파일 404, 콘솔 오류가 없어야 합니다. 로그아웃 후 인증 없는 Application 조회가 401/403으로 거부되는지도 확인합니다. 계정 역할상 허용되지 않은 Application이 보이는지 별도로 확인하며, UI 확인만으로 권한 검증을 대체하지 않습니다.
@@ -68,14 +70,14 @@ curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n
 
 ```bash
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  --header 'Host: more-naive-vm-1.tail373827.ts.net' http://127.0.0.1:18080/argocd-other
+  --header 'Host: more-naive-vm.tail373827.ts.net' http://172.30.104.10:18080/argocd-other
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  --header 'Host: wrong.invalid' http://127.0.0.1:18080/argocd/
+  --header 'Host: wrong.invalid' http://172.30.104.10:18080/argocd/
 ```
 
 404는 Gateway namespace/Host 허용과 VirtualService 상태를, redirect 반복은 Helm `server.insecure` 적용과 내부 HTTP 포트를, 정적 파일·API 경로 오류는 rootpath/basehref·prefix 유지를 확인합니다. 로그인 거부는 Argo 계정·RBAC부터 확인합니다. 검증 결과에는 실제 명령별 stdout/stderr/exit와 수행하지 못한 항목을 남기되 비밀번호·JWT·인증 URL·Secret/kubeconfig/state 본문을 포함하지 않습니다.
 
-되돌릴 때는 이 변경의 GitOps 라우트와 Helm subpath values를 함께 이전 값으로 되돌리고 native plan/apply와 기존 API를 재검증합니다. 자동 prune이 꺼져 있으므로 Git에서 새 VirtualService 선언을 제거해도 클러스터에서는 자동 삭제되지 않습니다. 운영자가 이름·namespace·의존 관계를 확인한 뒤 해당 `istio-system/argocd` VirtualService만 명시적으로 제거해야 합니다. 기존 Gateway·backend·DB/PVC·Serve는 삭제하지 않습니다.
+Argo CD를 이전 버전으로 복구할 때는 GitOps 라우트와 Helm subpath 값의 호환성을 함께 확인합니다. 현재 게이트웨이 주소와 `/argocd/`를 사용하도록 렌더링한 뒤 native plan/apply와 API를 재검증합니다. 자동 prune이 꺼져 있어 Git에서 VirtualService 선언을 제거해도 클러스터에서는 자동 삭제되지 않습니다.
 
 ## env에서 admin 비밀번호 설정
 

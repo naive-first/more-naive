@@ -17,6 +17,6 @@ inputs = {
   host_key         = get_env("SSH_HOST_KEY")
   private_key_file = get_env("SSH_KEY_FILE")
   node             = get_env("PROXY_EXPECTED_HOST")
-  https_hostname   = get_env("PROXY_HTTPS_HOSTNAME")
+  gateway_host     = yamldecode(file("${get_repo_root()}/infra/environments/prod/istio-route.yaml")).host
   proxy_directory  = "${get_repo_root()}/infra/tailscale/prod/proxy"
 }

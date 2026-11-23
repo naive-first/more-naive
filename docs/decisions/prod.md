@@ -36,9 +36,11 @@
 | Istio | 1.32.0 | [지원 범위](https://istio.io/latest/docs/releases/supported-releases/)에 Kubernetes 1.35가 포함됩니다. |
 | Argo CD chart / 앱 | 10.18.0 / v3.6.1 | [고정 chart 메타데이터](https://github.com/argoproj/argo-helm/blob/argo-cd-10.18.0/charts/argo-cd/Chart.yaml)를 사용합니다. |
 | Helm | 4.3.2 | [공식 릴리스](https://github.com/helm/helm/releases/tag/v4.3.2)의 Linux 바이너리 checksum을 검증합니다. |
-| Tailscale | 1.104.7 | [공식 릴리스](https://github.com/tailscale/tailscale/releases/tag/v1.104.7)를 신규 노드 설치 기준으로 사용합니다. 기존 proxy는 관측 후 변경 필요 여부를 판단합니다. |
+| Tailscale | Proxmox 게이트웨이 운영 버전 | [prod 게이트웨이](../../infra/tailscale/prod/README.md)가 TLS와 포워딩을 담당합니다. |
 
 ## 실제 연결 정보와 확인할 입력
+
+2026-11-23 운영 진입점은 `more-naive-vm.tail373827.ts.net`입니다. HTTPS 443은 VM 104의 `172.30.104.10:18080`과 Istio Service 80으로 연결되고, k3s API는 같은 호스트의 6443에서 기존 서버 CA로 확인합니다. RustFS 접근에는 SSH loopback 터널을 사용합니다. 아래 표는 초기 배포 시점 기록입니다.
 
 사용자가 제공한 `study@study-k3s-access.tail373827.ts.net`에 기존에 확인한 SSH host key와 개인키 파일로 접속하고 hostname·sudo를 확인했습니다. Tailnet peer `100.90.91.104`는 gateway이며 실제 VM의 hostname은 `system-design-study`, 내부 주소는 `172.30.104.10`입니다. 운영자 호스트의 Tailscale Running·peer ping을 검사하며 VM 안의 Tailscale daemon을 요구하지 않습니다. 키·토큰·비밀번호·kubeconfig 내용은 문서나 로그에 저장하지 않습니다.
 

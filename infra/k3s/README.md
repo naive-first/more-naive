@@ -15,6 +15,6 @@ MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terrag
 
 대상은 운영자가 정한 실제 k3s 노드입니다. 제공 VM `system-design-study`의 prod 설치가 승인됐습니다. Tailscale gateway가 SSH를 VM으로 전달하는 경로도 지원하며, 관리 호스트에서 peer 도달을 확인하고 VM의 host key·hostname·sudo를 대조합니다. VM 내부 Tailscale 데몬은 요구하지 않습니다. direnv의 표준 dotenv로 읽고 env 파일을 shell source하지 않으며 token/private key는 argv·Git·로그에 쓰지 않습니다. Terraform ephemeral 변수와 connection으로 전달하므로 plan/state에 저장하지 않습니다. 원격 전송 파일은 사용자 전용 임시 디렉터리에 쓰고 root 설치 단계에서 정리합니다.
 
-server는 Traefik·ServiceLB를 비활성화하고 kubeconfig·token을 0600으로 저장합니다. 고정 installer SHA256을 검증한 후 설치합니다. 매 apply는 실행 기록을 교체하며 기존 설치의 버전·구성·token·서비스 일치를 다시 확인합니다. 일치하면 노드를 변경하지 않고, 다르면 자동 업그레이드나 덮어쓰기 없이 중단합니다. 따라서 재실행 plan에는 `terraform_data` 교체가 표시됩니다. 이 자원 삭제에는 원격 uninstall 작업이 없습니다.
+server는 Traefik·ServiceLB를 비활성화하고 kubeconfig·token을 0600으로 저장합니다. 고정 installer SHA256을 검증한 후 설치합니다. 매 apply는 실행 기록을 교체하며 기존 설치의 버전·기본 구성·token·서비스 일치를 다시 확인합니다. 기존 값이 다르면 중단합니다. 일치하는 prod server에서는 [TLS SAN drop-in](config/prod/README.md)을 관리하고, 파일 내용이 달라진 경우에만 k3s를 재시작합니다. 따라서 재실행 plan에는 `terraform_data` 교체가 표시됩니다. 이 자원 삭제에는 원격 uninstall 작업이 없습니다.
 
 설치 실패 후 남은 구성은 운영자가 확인합니다. DNS/known_hosts·키 권한, 원격 사용자·hostname, `sudo -n true`, `tailscale status`, `systemctl status k3s` 순으로 진단합니다. state/plan이나 token·kubeconfig를 PR에 첨부하지 않습니다. 실제 prod 설치·Ready/DNS 확인은 별도 운영 단계이며 로컬 fixture 검증으로 완료했다고 주장하지 않습니다. uninstall·데이터/PVC 삭제·백업/복원은 포함하지 않습니다.

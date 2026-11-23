@@ -11,7 +11,7 @@ server:
     enabled: false
 configs:
   cm:
-    url: https://more-naive-vm-1.tail373827.ts.net/argocd
+    url: https://more-naive-vm.tail373827.ts.net/argocd
     exec.enabled: false
     timeout.reconciliation: 120s
   params:

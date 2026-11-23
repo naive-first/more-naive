@@ -43,6 +43,14 @@ variable "server_url" {
     error_message = "agent requires https://<private-server>:6443."
   }
 }
+variable "tls_san" {
+  type    = string
+  default = ""
+  validation {
+    condition     = var.tls_san == "" || (var.role == "server" && length(var.tls_san) <= 253 && can(regex("^[a-z0-9][a-z0-9.-]*\\.ts\\.net$", var.tls_san)))
+    error_message = "A TLS SAN, if set, must be a tailnet DNS name on a server."
+  }
+}
 variable "token" {
   type      = string
   sensitive = true

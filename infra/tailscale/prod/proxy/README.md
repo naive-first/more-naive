@@ -1,55 +1,20 @@
-# Prod tailnet HTTPS
+# prod Istio 사설 릴레이
 
-SSH 관리 진입점은 `study@more-naive-vm.tail373827.ts.net`(100.90.91.104)입니다. 실제 Ubuntu/k3s 노드 이름은 `more-naive-vm`입니다. VM에 설치하고 로그인한 Tailscale 노드는 별도 IP `100.90.159.52`와 DNS `more-naive-vm-1.tail373827.ts.net`을 받았습니다. HTTPS에는 인증된 노드의 실제 DNS를 사용합니다.
+Proxmox의 `more-naive-vm.tail373827.ts.net:443`이 TLS를 종료하고 원래 Host와 경로를 `172.30.104.10:18080`으로 보냅니다. VM의 `more-naive-gateway-relay.service`는 이 IPv4 주소에만 바인딩하고 `istio-system/service/istio-ingressgateway` 포트 80으로 전달합니다.
 
-경로는 tailnet 클라이언트 → Tailscale Serve HTTPS 443 → `127.0.0.1:18080` → Istio gateway Service:80입니다. Serve가 인증서를 관리하고 원래 Host와 경로를 전달합니다. gateway는 ClusterIP이며 Funnel·공인 LB·NodePort를 추가하지 않습니다.
-
-| HTTPS 경로 | Istio 이후 목적지 |
-| --- | --- |
-| `/api/tests`, `/api/tests/` 하위 | backend:8080 |
-| `/argocd` | HTTPS `/argocd/`로 redirect |
-| `/argocd/` 하위 | argocd-server.argocd.svc.cluster.local:80 |
-
-브라우저 사용자는 관리자의 tailnet 초대·서비스 접근 허용·필요한 기기 승인을 받은 뒤 Tailscale에 연결합니다. Argo CD는 별도 로그인·역할 권한이 필요하며 SSH 터널은 사용하지 않습니다. SSH 진입점은 운영 관리용입니다.
-
-Argo 경로는 [GitOps 라우트와 native Terraform Helm 갱신](../../../argocd/README.md#tailnet의-argocd-경로-적용)이 모두 반영된 뒤 사용할 수 있습니다. 기존 `/api/tests` 전용 배포 상태와 구분합니다. 이 경로 추가를 위해 Serve 재설정, relay 포트 변경이나 새 hostname은 필요하지 않습니다.
-
-## 설치와 적용
-
-공통 `config/env/env.prod`에 실제 SSH 검증값과 `PROXY_EXPECTED_HOST=more-naive-vm`, `PROXY_HTTPS_HOSTNAME=more-naive-vm-1.tail373827.ts.net`을 설정합니다. 개인키·인증값은 저장소 밖에 보관합니다. Terraform 1.17.2·Terragrunt 1.2.2와 실행 호스트의 SSH/jq, VM의 k3s·curl·jq·systemd가 필요합니다.
-
-Tailscale 설치도 선언된 native Terraform provisioner로 수행합니다. 고정 버전·checksum 설치와 서비스 시작은 첫 unit, HTTPS relay와 Serve 설정은 두 번째 unit이 담당합니다.
+[prod GitOps 라우트와 Helm URL](../../../argocd/README.md#tailnet의-argocd-경로-적용)을 먼저 확인합니다. 릴레이 설치는 SSH 대상 VM에 사설 IP가 할당돼 있고 k3s와 Istio ingress Deployment 및 `/api/tests`가 준비된 뒤 실행합니다. `env.prod`에 표준 SSH 값과 `PROXY_EXPECTED_HOST=more-naive-vm`을 설정합니다. 프로비저닝은 Istio prod values에서 Host를 읽습니다. 기존 `PROXY_HTTPS_HOSTNAME=more-naive-vm.tail373827.ts.net`은 운영 점검과 smoke에서 사용합니다.
 
 ```bash
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- init
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- plan
-# 설치 plan을 검토한 뒤 적용
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale run -- apply
+umask 077
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- init -input=false
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- plan -input=false -out=/absolute/private/tailscale-proxy.tfplan
+MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- apply -input=false /absolute/private/tailscale-proxy.tfplan
 ```
 
-처음 설치한 노드의 로그인은 VM 운영자가 비공개 브라우저 인증으로 완료합니다. 로그인 링크와 auth key를 PR에 남기지 않습니다. `tailscale status --json`의 Running과 Self.DNSName을 확인한 뒤, 그 DNS를 prod Gateway·VirtualService에 반영하고 Argo의 Synced/Healthy를 확인합니다.
-
-```bash
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- init
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- plan
-# terraform_data.proxy의 대상과 변경을 검토한 뒤 적용
-MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terragrunt/live/prod/tailscale-proxy run -- apply
-```
-
-이 unit은 `bootstrap.sh`와 relay systemd unit을 SSH file provisioner로 전달하고 remote-exec로 설치합니다. 사전 검사에서 prod·실제 OS 이름·로그인 DNS·gateway 경로·443 소유권·Funnel 비활성을 확인합니다. 기존 다른 Serve 설정과 서비스는 덮어쓰지 않습니다. HTTPS 기능 활성화 동의가 필요하면 원문은 VM `/var/lib/more-naive-proxy/serve-approval.txt`(0600)에만 저장합니다. 운영자가 비공개 링크로 동의한 뒤 plan을 다시 검토하고 apply합니다.
-
-relay는 `kubectl port-forward --address=127.0.0.1`로만 바인딩합니다. 선택한 gateway Pod가 바뀌어 port-forward가 끝나면 systemd가 다시 연결합니다. 서비스와 Tailscale daemon은 부팅 시 시작하도록 설정합니다. VM 재부팅 후 검증은 실제 재부팅을 수행한 경우에만 완료로 기록합니다.
-
-## 확인
+기존 `more-naive/prod/tailscale-proxy/terraform.tfstate`와 `terraform_data.proxy`를 사용합니다. 전환 계획에서 이 프로비저닝 marker만 교체됩니다. 프로비저닝은 기존 unit이 알려진 loopback 버전 또는 새 사설 버전과 일치하는지 확인합니다. 현재 VM의 `10-private-listener.conf`가 새 unit과 같은 명령을 설정하면 그대로 두고, 사설 주소에서 이미 동작하는 릴레이를 재시작하지 않습니다. 새 VM은 unit으로 사설 주소에 직접 바인딩합니다.
 
 ```bash
 MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/proxy/inspect_proxy.sh
-curl --fail --silent --show-error --output /dev/null https://more-naive-vm-1.tail373827.ts.net/api/tests
-curl --fail --silent --show-error --output /dev/null https://more-naive-vm-1.tail373827.ts.net/argocd/
-bash -n infra/tailscale/prod/proxy/bootstrap.sh
-terraform fmt -check infra/terraform/modules/tailscale-proxy
 ```
 
-VM에서는 `systemctl is-active/is-enabled more-naive-gateway-relay.service`, loopback 18080 바인딩, `tailscale serve status --json`의 HTTPS 443 대상과 Funnel 비활성을 확인합니다. 전체 status·peer·kubeconfig·state 대신 필요한 필드만 기록합니다. 잘못된 Host와 `/api/tests`·`/argocd/` 밖의 미등록 경로는 404여야 합니다. Argo UI·정적 파일·로그인·API 검증은 Argo CD 문서를 따릅니다. 실제 CRUD·backend/DB 재시작 영속성은 직접 만든 행만으로 검증하고 정리합니다. 운영 PVC 삭제·백업/복원은 수행하지 않습니다.
-
-[Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)는 localhost HTTP upstream을 사용합니다. [kubectl port-forward](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port-forward/)는 선택한 Pod 종료 시 연결도 종료하므로 systemd 재시작을 사용합니다.
+운영 점검은 VM의 사설 바인딩과 Host 기반 내부 HTTP `/api/tests`·`/argocd/`를 검사하고, 실행자 쪽 tailnet HTTPS에서도 동일한 두 경로의 200을 확인합니다. 장애 시 VM의 주소 및 `journalctl -u more-naive-gateway-relay.service`, ingress Pod/Service, Proxmox 포워딩을 차례로 확인합니다. 선택한 Pod가 종료되면 systemd가 포트 포워딩을 다시 시작합니다. [kubectl port-forward 문서](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port-forward/)
