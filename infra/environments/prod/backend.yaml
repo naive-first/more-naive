@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
   repository: ghcr.io/naive-first/more-naive-backend
-  digest: sha256:a16e5e4cf59c6e116d1992d525663d80fe4d02ddf2e0d75bea9c3d60b36679e9
+  digest: sha256:1244b64922665517a9c2e2b6d138173d363bceb27691ca6a261ccada6ede9a44
 resources:
   requests:
     cpu: 100m
