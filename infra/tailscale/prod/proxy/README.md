@@ -2,7 +2,7 @@
 
 Proxmox의 `more-naive-vm.tail373827.ts.net:443`이 TLS를 종료하고 원래 Host와 경로를 `172.30.104.10:18080`으로 보냅니다. VM의 `more-naive-gateway-relay.service`는 이 IPv4 주소에만 바인딩하고 `istio-system/service/istio-ingressgateway` 포트 80으로 전달합니다.
 
-[prod GitOps 라우트와 Helm URL](../../../argocd/README.md#tailnet의-argocd-경로-적용)을 먼저 확인합니다. 릴레이 설치는 SSH 대상 VM에 사설 IP가 할당돼 있고 k3s와 Istio ingress Deployment 및 `/api/tests`가 준비된 뒤 실행합니다. `env.prod`에 표준 SSH 값과 `PROXY_EXPECTED_HOST=more-naive-vm`을 설정합니다. 프로비저닝은 Istio prod values에서 Host를 읽습니다. 기존 `PROXY_HTTPS_HOSTNAME=more-naive-vm.tail373827.ts.net`은 운영 점검과 smoke에서 사용합니다.
+[prod GitOps 라우트와 Helm URL](../../../argocd/README.md#tailnet의-argocd-경로-적용)을 먼저 확인합니다. 릴레이 설치는 SSH 대상 VM에 사설 IP가 할당돼 있고 k3s와 Istio ingress Deployment 및 `/backend/api/tests`가 준비된 뒤 실행합니다. `env.prod`에 표준 SSH 값과 `PROXY_EXPECTED_HOST=more-naive-vm`을 설정합니다. 프로비저닝은 Istio prod values에서 Host를 읽습니다. 기존 `PROXY_HTTPS_HOSTNAME=more-naive-vm.tail373827.ts.net`은 운영 점검과 smoke에서 사용합니다.
 
 ```bash
 umask 077
@@ -17,4 +17,4 @@ MORE_NAIVE_ENV=prod direnv exec config/env terragrunt --working-dir infra/terrag
 MORE_NAIVE_ENV=prod direnv exec config/env bash infra/tailscale/prod/proxy/inspect_proxy.sh
 ```
 
-운영 점검은 VM의 사설 바인딩과 Host 기반 내부 HTTP `/api/tests`·`/argocd/`를 검사하고, 실행자 쪽 tailnet HTTPS에서도 동일한 두 경로의 200을 확인합니다. 장애 시 VM의 주소 및 `journalctl -u more-naive-gateway-relay.service`, ingress Pod/Service, Proxmox 포워딩을 차례로 확인합니다. 선택한 Pod가 종료되면 systemd가 포트 포워딩을 다시 시작합니다. [kubectl port-forward 문서](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port-forward/)
+운영 점검은 VM의 사설 바인딩과 Host 기반 내부 HTTP `/backend/api/tests`·`/argocd/`를 검사하고, 실행자 쪽 tailnet HTTPS에서도 동일한 두 경로의 200을 확인합니다. 장애 시 VM의 주소 및 `journalctl -u more-naive-gateway-relay.service`, ingress Pod/Service, Proxmox 포워딩을 차례로 확인합니다. 선택한 Pod가 종료되면 systemd가 포트 포워딩을 다시 시작합니다. [kubectl port-forward 문서](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_port-forward/)

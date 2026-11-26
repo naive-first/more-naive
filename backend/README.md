@@ -85,3 +85,17 @@ curl -i -X DELETE "$API_BASE_URL/api/tests/$ID"
 ```
 
 삭제 후 조회·재삭제는 404여야 합니다. 다른 사용자가 만든 행을 정리하거나 테이블을 비우지 않습니다. prod에서는 배포 이슈의 명시적 쓰기 검증 절차와 실제 HTTPS 주소를 사용합니다.
+
+## API 문서 (Swagger UI)
+
+springdoc-openapi 2.8.17이 컨트롤러 코드로 OpenAPI 명세를 만듭니다. 로컬에서 앱을 실행한 뒤 `http://localhost:8080/swagger-ui/index.html`에서 화면을, `http://localhost:8080/v3/api-docs`에서 JSON 명세를 확인합니다. API 설명은 `TestControllerDocs` 인터페이스와 DTO의 `@Schema`에 작성하고, 컨트롤러에는 Swagger 어노테이션을 두지 않습니다. actuator 경로는 명세에 포함하지 않습니다.
+
+prod에서는 tailnet 주소의 `/backend/` 아래에서 백엔드 전체를 제공합니다. Istio가 `/backend` prefix를 떼고 `X-Forwarded-Prefix: /backend`·`X-Forwarded-Proto: https`를 붙여 전달합니다. 앱은 `server.forward-headers-strategy: framework` 설정으로 이 헤더를 읽어 Swagger 설정과 Try it out 주소를 `https://<host>/backend`로 만듭니다. 앱 내부 경로와 probe(`/actuator/health/*`)는 그대로입니다.
+
+| 대상 | prod 주소 |
+| --- | --- |
+| Swagger UI | `https://more-naive-vm.tail373827.ts.net/backend/swagger-ui/index.html` |
+| OpenAPI JSON | `https://more-naive-vm.tail373827.ts.net/backend/v3/api-docs` |
+| test API | `https://more-naive-vm.tail373827.ts.net/backend/api/tests` |
+
+라우트는 main merge 후 Argo CD sync로 바로 적용되고, Swagger 화면은 이 기능을 포함한 이미지가 승격된 뒤 열립니다. 인증이 없으므로 tailnet 접근 정책으로 접근 범위를 제한합니다.

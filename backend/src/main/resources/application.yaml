@@ -19,6 +19,7 @@ spring:
 server:
   port: 8080
   shutdown: graceful
+  forward-headers-strategy: framework
 management:
   endpoints:
     web:
@@ -34,3 +35,5 @@ management:
           include: livenessState
         readiness:
           include: readinessState,db
+springdoc:
+  override-with-generic-response: false

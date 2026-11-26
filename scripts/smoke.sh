@@ -17,11 +17,11 @@ request() {
   local method=$1 suffix=${2-} value=${3-}
   local args=(curl --silent --show-error --noproxy '*' --max-time 20 --request "$method" --header 'Content-Type: application/json' --output "$temporary/body" --write-out '%{http_code}')
   if [[ $method == POST || $method == PUT ]]; then
-    status=$(jq -n --arg value "$value" '{value:$value}' | "${args[@]}" --data-binary @- "https://$PROXY_HTTPS_HOSTNAME/api/tests$suffix")
+    status=$(jq -n --arg value "$value" '{value:$value}' | "${args[@]}" --data-binary @- "https://$PROXY_HTTPS_HOSTNAME/backend/api/tests$suffix")
   else
-    status=$("${args[@]}" "https://$PROXY_HTTPS_HOSTNAME/api/tests$suffix")
+    status=$("${args[@]}" "https://$PROXY_HTTPS_HOSTNAME/backend/api/tests$suffix")
   fi
-  printf '%s /api/tests%s: %s\n' "$method" "$suffix" "$status"
+  printf '%s /backend/api/tests%s: %s\n' "$method" "$suffix" "$status"
 }
 cleanup() {
   local result=$? id; trap - EXIT

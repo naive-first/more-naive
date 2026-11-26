@@ -33,9 +33,14 @@ spec:
   http:
     - match:
         - uri:
-            exact: /api/tests
-        - uri:
-            prefix: /api/tests/
+            prefix: /backend/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            x-forwarded-prefix: /backend
+            x-forwarded-proto: https
       route:
         - destination:
             host: {{ printf "%s.%s.svc.cluster.local" .Release.Name .Release.Namespace | quote }}
