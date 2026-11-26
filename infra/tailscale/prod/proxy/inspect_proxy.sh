@@ -15,14 +15,14 @@ systemctl is-active more-naive-gateway-relay.service
 [[ $(ss -H -ltn 'sport = :18080' | awk '{print $4}') == "$listener" ]] || {
   echo 'expected only the private relay listener' >&2; exit 1;
 }
-for path in /api/tests /argocd/; do
+for path in /backend/api/tests /argocd/; do
   code=$(curl --fail --silent --show-error --noproxy '*' --max-time 10 --header "Host: $host" \
     --output /dev/null --write-out '%{http_code}' "http://$listener$path")
   printf '%s %s %s\n' "$listener" "$path" "$code"
   [[ $code == 200 ]] || exit 1
 done
 REMOTE
-for path in /api/tests /argocd/; do
+for path in /backend/api/tests /argocd/; do
   code=$(curl --fail --silent --show-error --noproxy '*' --max-time 10 \
     --output /dev/null --write-out '%{http_code}' "https://$PROXY_HTTPS_HOSTNAME$path")
   printf '%s %s %s\n' "$PROXY_HTTPS_HOSTNAME" "$path" "$code"

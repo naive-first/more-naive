@@ -32,7 +32,8 @@ prod k3s·Argo CD·PostgreSQL·backend·Istio gateway를 배포했습니다. Pro
 
 | 서비스 | 접속 주소 | 동작 |
 | --- | --- | --- |
-| API | `https://more-naive-vm.tail373827.ts.net/api/tests` | 읽기 전용 목록 조회, HTTP 200과 JSON 배열. 빈 목록은 `[]` |
+| API | `https://more-naive-vm.tail373827.ts.net/backend/api/tests` | 읽기 전용 목록 조회, HTTP 200과 JSON 배열. 빈 목록은 `[]` |
+| API 문서 | `https://more-naive-vm.tail373827.ts.net/backend/swagger-ui/index.html` | Swagger UI에서 test API 명세 확인과 Try it out 호출. OpenAPI JSON은 `/backend/v3/api-docs` |
 | Argo CD | `https://more-naive-vm.tail373827.ts.net/argocd/` | Argo CD 로그인 화면. `/argocd`는 끝에 `/`가 붙은 주소로 이동 |
 | Kubernetes API | `https://more-naive-vm.tail373827.ts.net:6443` | 기존 k3s CA를 사용하는 kubectl 접속 |
 
@@ -40,15 +41,16 @@ Argo CD의 GitOps 라우트와 native Terraform Helm subpath 설정은 운영에
 
 ```bash
 curl --fail --silent --show-error \
-  https://more-naive-vm.tail373827.ts.net/api/tests
+  https://more-naive-vm.tail373827.ts.net/backend/api/tests
 ```
 
-API 상세 조회는 `/api/tests/{id}`이며 쓰기 요청은 [backend API 문서](backend/README.md)를 따릅니다. SSH와 Kubernetes API(`6443`)도 같은 DNS를 사용합니다. 비밀번호·개인키·로그인 토큰을 README나 PR에 적지 않습니다.
+백엔드의 외부 경로는 모두 `/backend/` 아래에 있습니다. 게이트웨이가 `/backend`를 떼고 앱에 전달하므로 앱 경로 `/api/tests`는 외부에서 `/backend/api/tests`가 되며, prefix 없는 `/api/tests`는 404입니다. API 상세 조회는 `/backend/api/tests/{id}`이며 쓰기 요청과 Swagger 경로 설명은 [backend API 문서](backend/README.md)를 따릅니다. SSH와 Kubernetes API(`6443`)도 같은 DNS를 사용합니다. 비밀번호·개인키·로그인 토큰을 README나 PR에 적지 않습니다.
 
 | 접속 문제 | 확인할 항목 |
 | --- | --- |
 | DNS 조회 실패·시간 초과 | Tailscale 연결, 올바른 tailnet, 기기 승인, 대상 HTTPS 서비스 접근 정책 |
-| API 인증서 오류·404 | 서비스 DNS와 `/api/tests` 경로. TLS 검증을 끄지 않고 [proxy 운영 문서](infra/tailscale/prod/proxy/README.md)에 따라 점검 |
+| API 인증서 오류·404 | 서비스 DNS와 `/backend/api/tests` 경로(`/backend` prefix 포함 여부). TLS 검증을 끄지 않고 [proxy 운영 문서](infra/tailscale/prod/proxy/README.md)에 따라 점검 |
+| Swagger UI 404 | 라우트는 main merge 후 바로 적용되지만 Swagger 화면은 이 기능을 포함한 backend 이미지가 승격된 뒤 열림. promotion PR merge와 Argo CD sync 여부 확인 |
 | Argo CD 404·반복 redirect·정적 파일 오류 | 라우트와 Argo Helm subpath 설정의 적용 여부를 [Argo CD 운영 문서](infra/argocd/README.md)에서 확인 |
 | Argo CD 로그인·조회 거부 | 관리자에게 Argo CD 계정·역할 권한 확인 요청 |
 

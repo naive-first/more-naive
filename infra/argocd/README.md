@@ -61,7 +61,7 @@ curl --fail --silent --show-error --location --max-redirs 3 \
 curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
   https://more-naive-vm.tail373827.ts.net/argocd/api/v1/settings
 curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  https://more-naive-vm.tail373827.ts.net/api/tests
+  https://more-naive-vm.tail373827.ts.net/backend/api/tests
 ```
 
 브라우저에서 `/argocd/`를 열고 개발자 도구 Network에서 JavaScript·CSS가 `/argocd/` 아래의 URL로 200을 받는지 확인합니다. 승인된 계정으로 로그인한 뒤 Application 목록·상세를 열고 새로고침합니다. 로그인 화면 재등장, `/api/v1/...` 루트로 빠지는 요청, 정적 파일 404, 콘솔 오류가 없어야 합니다. 로그아웃 후 인증 없는 Application 조회가 401/403으로 거부되는지도 확인합니다. 계정 역할상 허용되지 않은 Application이 보이는지 별도로 확인하며, UI 확인만으로 권한 검증을 대체하지 않습니다.

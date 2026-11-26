@@ -21,13 +21,13 @@ bootstrap은 `more-naive-prod` namespace만 `istio-injection=enabled`로 표시�
 
 공식 gateway chart는 동일 고정 Git 소스를 사용하고 `istio-ingressgateway.istio-system.svc.cluster.local:80`을 ClusterIP로만 제공합니다. HTTPS/공인 LoadBalancer·NodePort·Funnel·backend 직접 노출은 만들지 않습니다. 상태 포트15021은 준비 확인용입니다. gateway는 istiod의 gateway injection을 사용하며 bootstrap이 제어 서버 준비 후 등록합니다.
 
-prod Tailscale DNS는 `more-naive-vm.tail373827.ts.net`입니다. backend의 VirtualService는 `istio-system/more-naive-gateway`와 동일한 이 Host를 사용하고 `/api/tests`와 하위 경로만 backend:8080으로 전달합니다. Proxmox가 TLS를 종료하고, [VM의 사설 릴레이](tailscale/prod/proxy/README.md)가 HTTP를 Istio Service 80으로 전달합니다.
+prod Tailscale DNS는 `more-naive-vm.tail373827.ts.net`입니다. backend의 VirtualService는 `istio-system/more-naive-gateway`와 동일한 이 Host를 사용하고 `/backend/` 하위 경로만 backend:8080으로 전달합니다. 전달할 때 `/backend` prefix를 떼고 `X-Forwarded-Prefix: /backend`·`X-Forwarded-Proto: https` 헤더를 설정해, 앱이 Swagger UI와 API 명세의 외부 주소를 `https://<host>/backend`로 만들게 합니다. 앱 내부 경로와 probe 경로는 바뀌지 않습니다. Proxmox가 TLS를 종료하고, [VM의 사설 릴레이](tailscale/prod/proxy/README.md)가 HTTP를 Istio Service 80으로 전달합니다.
 
 실제 DNS를 입력한 `istio-route.yaml` values와 `ingress-route.yaml` Application을 활성화했습니다. `infra/charts/istio-route`는 Host 누락·일반 공인 hostname을 거부합니다. Gateway는 `more-naive-prod`와 `istio-system` namespace의 해당 Host VirtualService만 연결합니다. 이 선언의 sync와 실제 tailnet HTTPS 연결 검증은 각각 확인합니다.
 
 | 경로 | VirtualService namespace/name | 내부 전달 |
 | --- | --- | --- |
-| `/api/tests`, `/api/tests/` 하위 | `more-naive-prod/backend` | `backend.more-naive-prod.svc.cluster.local:8080` |
+| `/backend/` 하위 | `more-naive-prod/backend` | `backend.more-naive-prod.svc.cluster.local:8080`, `/backend` prefix 제거 |
 | `/argocd` | `istio-system/argocd` | 동일 Host의 HTTPS `/argocd/`로 308 redirect |
 | `/argocd/` 하위 | `istio-system/argocd` | `argocd-server.argocd.svc.cluster.local:80`, prefix 유지 |
 

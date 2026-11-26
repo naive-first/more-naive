@@ -37,7 +37,7 @@ kube=(/usr/local/bin/k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml -n istio
 gateway_ip=$("${kube[@]}" get service istio-ingressgateway -o 'jsonpath={.spec.clusterIP}')
 [[ $gateway_ip =~ ^10\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'private gateway ClusterIP required'
 [[ $(curl --fail --silent --show-error --noproxy '*' --max-time 10 --header "Host: $host" \
-  --output /dev/null --write-out '%{http_code}' "http://$gateway_ip:80/api/tests") == 200 ]] || fail 'Istio gateway route is not ready'
+  --output /dev/null --write-out '%{http_code}' "http://$gateway_ip:80/backend/api/tests") == 200 ]] || fail 'Istio gateway route is not ready'
 if [[ $# == 0 ]]; then echo 'node, private listener configuration and gateway verified'; exit 0; fi
 
 if ! cmp -s "$source_unit" "$unit_path"; then
@@ -51,7 +51,7 @@ fi
 for ((attempt=0; attempt<20; attempt++)); do
   if [[ $(ss -H -ltn "sport = :$port" | awk '{print $4}') == "$proxy" ]] &&
     [[ $(curl --fail --silent --noproxy '*' --max-time 2 --header "Host: $host" \
-      --output /dev/null --write-out '%{http_code}' "http://$proxy/api/tests") == 200 ]]; then
+      --output /dev/null --write-out '%{http_code}' "http://$proxy/backend/api/tests") == 200 ]]; then
     echo "private relay $proxy -> Istio Service:80 verified"
     exit 0
   fi
