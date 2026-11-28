@@ -23,3 +23,28 @@ helm template postgres infra/charts/postgres --namespace more-naive-prod -f infr
 데이터 보존 검증은 별도 prod 쓰기 opt-in과 재시작 영향 확인 후 진행합니다. 자신이 만든 `test` 행의 id/value와 PVC UID를 기록하고, 승인한 DB Pod 재시작 후 같은 PVC UID와 같은 행을 읽습니다. 마지막에 그 id의 행만 정리합니다. PVC를 삭제하거나 기존 다른 행을 변경하지 않습니다. 실제 API·재시작 검증 흐름은 #24/#26과 연결하며 이 선언의 렌더링으로 수행했다고 기록하지 않습니다.
 
 재실행은 같은 release·namespace·PVC를 유지합니다. 설정 변경 시 #16 주입 코드를 실행하고 필요한 Pod만 재시작합니다. DB role 비밀번호와 Secret은 함께 맞춰야 하며 Secret 변경만으로 기존 DB 비밀번호가 바뀌지 않습니다. StatefulSet 삭제·축소에 PVC를 Retain하지만 PVC 직접 삭제·노드/디스크 손실까지 막지는 못합니다. 단일 노드/디스크는 HA가 아니고 백업·보관·복원 리허설을 추가하지 않습니다. 운영자가 삭제할 때에는 App/StatefulSet과 PVC/실제 데이터를 구분하여 영향과 권한을 확인해야 합니다.
+
+## prod Redis Cluster
+
+같은 namespace에 Redis Cluster 6노드(master 3 + replica 3)를 배포하는 선언입니다. `more-naive-db` 프로젝트에서 `platform.yaml` → `redis.yaml`을 적용하며 release/Service 이름은 `redis`입니다. chart 동작은 [Redis chart](../../charts/redis/README.md)를 참조합니다. 아직 실제 prod에 sync하지 않았습니다.
+
+| 준비할 입력 | 담당·확인 시점 |
+| --- | --- |
+| `env.prod`의 `REDIS_PASSWORD`를 [설정 주입](../../secrets/prod/README.md)으로 Secret `more-naive-db`에 반영 | 운영자, **이 선언을 main에 merge하기 전** |
+| StorageClass `local-path`, 1Gi × 6 용량 | 클러스터 운영자, Redis sync 전 |
+| `more-naive-db` 프로젝트의 NetworkPolicy·Job 허용 | `more-naive-projects` Application sync |
+
+merge 즉시 Argo CD가 sync합니다. Secret에 `REDIS_PASSWORD`가 없으면 Redis 파드가 `CreateContainerConfigError`로 대기하고, 주입 후 자동으로 기동합니다. 프로젝트 허용이 아직 반영되지 않았으면 NetworkPolicy·Job sync가 거부되며, `more-naive-projects` sync 뒤 다시 시도됩니다. DB Pod와 마찬가지로 Redis·Job Pod는 `sidecar.istio.io/inject: "false"`로 sidecar를 제외합니다.
+
+```sh
+helm lint infra/charts/redis --strict -f infra/environments/prod/platform.yaml -f infra/environments/prod/redis.yaml
+helm template redis infra/charts/redis --namespace more-naive-prod -f infra/environments/prod/platform.yaml -f infra/environments/prod/redis.yaml
+```
+
+sync 후에는 운영자가 명시한 prod context에서 `redis-cluster-create` Job 성공과 클러스터 상태를 확인합니다. `cluster_state:ok`, 노드 6개, master 3·replica 3이어야 합니다. 비밀번호는 Pod 안의 환경변수로만 전달하고 출력하지 않습니다.
+
+```sh
+kubectl --context "$KUBE_CONTEXT" -n more-naive-prod rollout status statefulset/redis --timeout=300s
+kubectl --context "$KUBE_CONTEXT" -n more-naive-prod logs job/redis-cluster-create
+kubectl --context "$KUBE_CONTEXT" -n more-naive-prod exec redis-0 -- sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli cluster info' | grep -E 'cluster_state|cluster_known_nodes|cluster_size'
+```

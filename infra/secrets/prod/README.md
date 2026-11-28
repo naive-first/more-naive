@@ -14,6 +14,7 @@ MORE_NAIVE_ENV=prod direnv exec config/env bash scripts/inject-config.sh --apply
 | `DB_USERNAME` | 같은 ConfigMap / `DB_USERNAME` | PostgreSQL `POSTGRES_USER`, backend `DB_USERNAME` |
 | DB 이름·prod namespace | 같은 ConfigMap / `DB_URL` | `jdbc:postgresql://postgres.<namespace>.svc.cluster.local:5432/<database>` |
 | `DB_PASSWORD` | Secret `more-naive-db` / `DB_PASSWORD` | PostgreSQL `POSTGRES_PASSWORD`, backend `DB_PASSWORD` |
+| `REDIS_PASSWORD` | 같은 Secret / `REDIS_PASSWORD` | Redis `requirepass`·`masterauth`, 클러스터 묶기 Job |
 
 DB Service 이름은 `postgres`, 포트는 5432 계약입니다. `KUBE_CONTEXT`, `KUBE_SERVER`, `NAMESPACE`는 대상 검증에만 사용합니다. URL database 부분은 URL 인코딩합니다. local DB·RustFS·cloud·SSH·Tailscale·registry 인증은 이 두 객체에 넣지 않습니다. Secret은 `data`로 인코딩하여 stdin으로 전달하며 base64는 암호화가 아닙니다. cluster 저장 보호·접근 제어는 [Kubernetes Secret 경계](https://kubernetes.io/docs/concepts/configuration/secret/)를 따릅니다.
 
@@ -28,6 +29,7 @@ platform:
     username: DB_USERNAME
     url: DB_URL
     password: DB_PASSWORD
+    redisPassword: REDIS_PASSWORD
 ```
 
 이 도구만 두 객체의 값을 소유합니다. chart/Argo CD Application 경로에 같은 Secret/ConfigMap을 넣지 않고 자동 prune도 사용하지 않습니다. `--server-side --field-manager=more-naive-config`로 [field 소유권](https://kubernetes.io/docs/reference/using-api/server-side-apply/)을 기록하며 충돌을 강제로 덮지 않습니다. 두 객체의 데이터 key/값을 API로 다시 읽어 일치를 검증하고 성공 시 값 없이 `verified`만 출력합니다. 자식 stderr에 값이 들어올 수 있어 실패 출력도 요약만 제공합니다.
