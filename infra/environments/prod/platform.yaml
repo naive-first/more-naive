@@ -6,3 +6,4 @@ platform:
     username: DB_USERNAME
     url: DB_URL
     password: DB_PASSWORD
+    redisPassword: REDIS_PASSWORD

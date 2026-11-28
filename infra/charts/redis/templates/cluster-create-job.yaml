@@ -1,0 +1,96 @@
+# Argo CD는 sync가 끝날 때마다 이 Job을 다시 실행한다.
+# 6개 노드가 모두 비어 있을 때만 클러스터로 묶고, 이미 묶여 있으면 아무것도 하지 않는다.
+# 일부 노드만 클러스터에 속해 있으면(예: PVC가 지워져 빈 상태로 다시 뜬 노드) 어떤 노드를 버릴지
+# 자동으로 판단하지 않고 그대로 실패해 운영자가 README의 수동 복구 절차를 따르게 한다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-cluster-create
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/name: redis-cluster-create
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      containers:
+        - name: cluster-create
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          env:
+            {{- include "redis.passwordEnv" . | nindent 12 }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - sh
+            - -c
+            - |
+              set -u
+              export REDISCLI_AUTH="$REDIS_PASSWORD"
+              node_count={{ include "redis.nodeCount" . }}
+              total_slots=16384
+              node_ips=""
+              ordinal=0
+              while [ "$ordinal" -lt "$node_count" ]; do
+                node_host="{{ .Release.Name }}-$ordinal.{{ .Release.Name }}-headless.$POD_NAMESPACE.svc.cluster.local"
+                attempt=0
+                until node_ip=$(getent hosts "$node_host" | awk '{print $1}') && [ -n "$node_ip" ] \
+                    && redis-cli -h "$node_ip" ping 2>/dev/null | grep -qx PONG; do
+                  attempt=$((attempt + 1))
+                  if [ "$attempt" -ge 150 ]; then
+                    echo "$node_host 가 응답하지 않아 중단합니다."
+                    exit 1
+                  fi
+                  sleep 2
+                done
+                node_ips="$node_ips $node_ip"
+                ordinal=$((ordinal + 1))
+              done
+
+              # 전체 재시작 직후에는 노드끼리 다시 만나는 중이라 잠시 노드 수가 어긋날 수 있어 몇 번 다시 확인한다.
+              check=0
+              while [ "$check" -lt 12 ]; do
+                empty_count=0
+                joined_count=0
+                for node_ip in $node_ips; do
+                  cluster_info=$(redis-cli -h "$node_ip" cluster info | tr -d '\r')
+                  known_nodes=$(printf '%s\n' "$cluster_info" | awk -F: '$1 == "cluster_known_nodes" {print $2}')
+                  slots_assigned=$(printf '%s\n' "$cluster_info" | awk -F: '$1 == "cluster_slots_assigned" {print $2}')
+                  echo "$node_ip known_nodes=$known_nodes slots_assigned=$slots_assigned"
+                  if [ "$known_nodes" = 1 ] && [ "$slots_assigned" = 0 ]; then
+                    empty_count=$((empty_count + 1))
+                  elif [ "$known_nodes" = "$node_count" ] && [ "$slots_assigned" = "$total_slots" ]; then
+                    joined_count=$((joined_count + 1))
+                  fi
+                done
+                if [ "$joined_count" -eq "$node_count" ]; then
+                  echo "이미 클러스터로 묶여 있어 변경하지 않습니다."
+                  exit 0
+                fi
+                if [ "$empty_count" -eq "$node_count" ]; then
+                  set --
+                  for node_ip in $node_ips; do
+                    set -- "$@" "$node_ip:6379"
+                  done
+                  exec redis-cli --cluster create "$@" --cluster-replicas 1 --cluster-yes
+                fi
+                check=$((check + 1))
+                sleep 5
+              done
+              echo "일부 노드만 클러스터에 속해 있어 변경하지 않습니다. README의 수동 복구 절차를 따르세요."
+              exit 1
+          resources:
+            {{- toYaml .Values.clusterCreateJob.resources | nindent 12 }}

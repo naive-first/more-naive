@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    {{- include "redis.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-headless
+  namespace: {{ .Release.Namespace }}
+spec:
+  clusterIP: None
+  # 클러스터가 묶이기 전에는 파드가 서로의 주소를 찾아야 하므로 준비 전 주소도 공개한다.
+  publishNotReadyAddresses: true
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+    - name: cluster-bus
+      port: 16379
+      targetPort: cluster-bus
+  selector:
+    {{- include "redis.selectorLabels" . | nindent 4 }}

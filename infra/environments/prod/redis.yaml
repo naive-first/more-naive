@@ -1,0 +1,15 @@
+image:
+  repository: redis
+  tag: 8.12.0-alpine
+storage:
+  className: local-path
+  size: 1Gi
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
